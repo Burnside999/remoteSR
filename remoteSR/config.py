@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 try:
     import yaml  # type: ignore
@@ -11,7 +11,7 @@ except ImportError:
     yaml = None
 
 
-_DEFAULTS: Dict[str, Any] = {
+_DEFAULTS: dict[str, Any] = {
     "model": {
         "lr_channels": 3,
         "hr_channels": 3,
@@ -87,7 +87,7 @@ _DEFAULTS: Dict[str, Any] = {
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "default.yaml"
 
 
-def _deep_merge(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]:
+def _deep_merge(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:
     result = deepcopy(base)
     for key, value in (updates or {}).items():
         if isinstance(value, dict) and isinstance(result.get(key), dict):
@@ -97,13 +97,15 @@ def _deep_merge(base: Dict[str, Any], updates: Dict[str, Any]) -> Dict[str, Any]
     return result
 
 
-def _load_raw_config(path: Path) -> Dict[str, Any]:
+def _load_raw_config(path: Path) -> dict[str, Any]:
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
 
     if path.suffix.lower() in {".yaml", ".yml"}:
         if yaml is None:
-            raise ImportError("pyyaml is required for YAML config files. Install via `pip install pyyaml`.")
+            raise ImportError(
+                "pyyaml is required for YAML config files. Install via `pip install pyyaml`."
+            )
         with path.open("r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
 
@@ -114,7 +116,7 @@ def _load_raw_config(path: Path) -> Dict[str, Any]:
     raise ValueError(f"Unsupported config format: {path.suffix}")
 
 
-def load_config(path: str | Path | None = None) -> Dict[str, Any]:
+def load_config(path: str | Path | None = None) -> dict[str, Any]:
     """
     Load a config file and merge with defaults.
     """

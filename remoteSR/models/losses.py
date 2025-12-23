@@ -1,18 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from remoteSR.utils.io import save_tensor_as_png, stat
+from remoteSR.utils.io import save_tensor_as_png
 
 __all__ = ["LossWeights", "SemiSRLoss"]
 
 
-def masked_l1(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Tensor] = None, eps: float = 1e-8) -> torch.Tensor:
+def masked_l1(
+    pred: torch.Tensor,
+    target: torch.Tensor,
+    mask: torch.Tensor | None = None,
+    eps: float = 1e-8,
+) -> torch.Tensor:
     """
     pred/target: (B, C, H, W)
     mask: (B, 1, H, W) or (B, C, H, W) or None
@@ -30,7 +34,9 @@ def masked_l1(pred: torch.Tensor, target: torch.Tensor, mask: Optional[torch.Ten
     return diff.sum() / (denom + eps)
 
 
-def total_variation_loss(x: torch.Tensor, mask: Optional[torch.Tensor] = None, reduction: str = "mean") -> torch.Tensor:
+def total_variation_loss(
+    x: torch.Tensor, mask: torch.Tensor | None = None, reduction: str = "mean"
+) -> torch.Tensor:
     """
     Total variation loss on an image tensor.
     """
@@ -66,8 +72,16 @@ def sobel(x: torch.Tensor, mode: str = "mag", eps: float = 1e-6) -> torch.Tensor
     b, c, h, w = x.shape
     dtype, device = x.dtype, x.device
 
-    kx = torch.tensor([[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]], device=device, dtype=dtype).view(1, 1, 3, 3)
-    ky = torch.tensor([[-1.0, -2.0, -1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]], device=device, dtype=dtype).view(1, 1, 3, 3)
+    kx = torch.tensor(
+        [[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]],
+        device=device,
+        dtype=dtype,
+    ).view(1, 1, 3, 3)
+    ky = torch.tensor(
+        [[-1.0, -2.0, -1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]],
+        device=device,
+        dtype=dtype,
+    ).view(1, 1, 3, 3)
 
     kx = kx.repeat(c, 1, 1, 1)
     ky = ky.repeat(c, 1, 1, 1)
@@ -88,7 +102,10 @@ class ContextualLoss(nn.Module):
     """
     Contextual Loss for non-aligned feature matching with optional random sampling.
     """
-    def __init__(self, bandwidth: float = 0.1, max_samples: int = 1024, eps: float = 1e-5):
+
+    def __init__(
+        self, bandwidth: float = 0.1, max_samples: int = 1024, eps: float = 1e-5
+    ):
         super().__init__()
         self.bandwidth = float(bandwidth)
         self.max_samples = int(max_samples)
@@ -153,6 +170,7 @@ class SemiSRLoss(nn.Module):
     """
     Combined loss for semi-supervised SR.
     """
+
     def __init__(
         self,
         model: nn.Module,
@@ -171,19 +189,26 @@ class SemiSRLoss(nn.Module):
         self,
         y_lr: torch.Tensor,
         x_ls_hr: torch.Tensor,
-        mask_lr: Optional[torch.Tensor] = None,
-        mask_hr: Optional[torch.Tensor] = None,
-        x_hr_gt: Optional[torch.Tensor] = None,
-        has_hr_gt: Optional[torch.Tensor] = None,
-    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+        mask_lr: torch.Tensor | None = None,
+        mask_hr: torch.Tensor | None = None,
+        x_hr_gt: torch.Tensor | None = None,
+        has_hr_gt: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
         x_hat, y_recon = self.model(y_lr, return_lr_recon=True, return_features=False)
 
         if torch.rand(()) < 0.01:
             save_tensor_as_png(x_hat, "debug_out/x_hat_step.png")
-            save_tensor_as_png(torch.nn.functional.interpolate(y_lr, scale_factor=4, mode="nearest"), "debug_out/y_lr_up.png")
+            save_tensor_as_png(
+                torch.nn.functional.interpolate(y_lr, scale_factor=4, mode="nearest"),
+                "debug_out/y_lr_up.png",
+            )
             save_tensor_as_png(x_ls_hr, "debug_out/x_ls_hr.png")
 
-        l_lr = masked_l1(y_recon, y_lr, mask_lr) if (self.use_mask and mask_lr is not None) else F.l1_loss(y_recon, y_lr)
+        l_lr = (
+            masked_l1(y_recon, y_lr, mask_lr)
+            if (self.use_mask and mask_lr is not None)
+            else F.l1_loss(y_recon, y_lr)
+        )
 
         f_hat = self.model.phi(x_hat)
         f_ls = self.model.phi(x_ls_hr).detach()
@@ -207,8 +232,14 @@ class SemiSRLoss(nn.Module):
             l_tv = total_variation_loss(x_hat.float())
 
         l_pix = x_hat.new_tensor(0.0)
-        if (x_hr_gt is not None) and (has_hr_gt is not None) and (self.w.lambda_pix > 0):
-            has = has_hr_gt.view(-1).float() if has_hr_gt.dim() > 1 else has_hr_gt.float()
+        if (
+            (x_hr_gt is not None)
+            and (has_hr_gt is not None)
+            and (self.w.lambda_pix > 0)
+        ):
+            has = (
+                has_hr_gt.view(-1).float() if has_hr_gt.dim() > 1 else has_hr_gt.float()
+            )
             per = (x_hat - x_hr_gt).abs().mean(dim=(1, 2, 3))
             denom = has.sum().clamp(min=1.0)
             l_pix = (per * has).sum() / denom

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict
 
 import torch
 from torch.utils.data import DataLoader
@@ -9,13 +8,25 @@ from torch.utils.data import DataLoader
 from remoteSR.config import load_config
 from remoteSR.data import EvalLRDataset, SRDataset
 from remoteSR.models import LossWeights, SemiSRConfig, SemiSRLoss, SemiSupervisedSRModel
-from remoteSR.utils.training import build_optimizer, evaluate_lr_reconstruction, train_one_epoch
+from remoteSR.utils.training import (
+    build_optimizer,
+    evaluate_lr_reconstruction,
+    train_one_epoch,
+)
 
 
-def _maybe_export_onnx(model: torch.nn.Module, output_dir: Path, epoch: int, in_channels: int, opset: int = 18) -> None:
+def _maybe_export_onnx(
+    model: torch.nn.Module,
+    output_dir: Path,
+    epoch: int,
+    in_channels: int,
+    opset: int = 18,
+) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     model.eval()
-    dummy_input = torch.randn(1, in_channels, 224, 224, device=next(model.parameters()).device)
+    dummy_input = torch.randn(
+        1, in_channels, 224, 224, device=next(model.parameters()).device
+    )
     torch.onnx.export(
         model,
         dummy_input,
@@ -33,7 +44,11 @@ def run_training(config_path: str | Path | None = None) -> None:
 
     data_cfg = cfg["data"]
     train_loader = DataLoader(
-        SRDataset(lr_dir=data_cfg["train_lr_dir"], hr_dir=data_cfg["train_hr_dir"], scale=data_cfg["scale"]),
+        SRDataset(
+            lr_dir=data_cfg["train_lr_dir"],
+            hr_dir=data_cfg["train_hr_dir"],
+            scale=data_cfg["scale"],
+        ),
         batch_size=data_cfg["batch_size"],
         shuffle=True,
         num_workers=data_cfg["num_workers"],
@@ -86,13 +101,15 @@ def run_training(config_path: str | Path | None = None) -> None:
 
     train_cfg = cfg["training"]
     use_amp = bool(train_cfg.get("amp", False))
-    scaler = torch.amp.GradScaler("cuda") if use_amp and torch.cuda.is_available() else None
+    scaler = (
+        torch.amp.GradScaler("cuda") if use_amp and torch.cuda.is_available() else None
+    )
 
     log_file = Path(train_cfg["log_file"])
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
     for epoch in range(1, train_cfg["epochs"] + 1):
-        logs: Dict[str, float] = train_one_epoch(
+        logs: dict[str, float] = train_one_epoch(
             epoch=epoch,
             model=model,
             criterion=criterion,
@@ -105,7 +122,7 @@ def run_training(config_path: str | Path | None = None) -> None:
         )
 
         if eval_loader is not None and (epoch % eval_every == 0):
-            eval_logs = evaluate_lr_reconstruction(
+            evaluate_lr_reconstruction(
                 model=model,
                 dataloader=eval_loader,
                 device=device,

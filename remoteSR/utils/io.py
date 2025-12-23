@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-from typing import Any
 
 import torch
 
@@ -23,6 +22,7 @@ def save_tensor_as_png(x: torch.Tensor, path: str) -> None:
     if dirpath:
         os.makedirs(dirpath, exist_ok=True)
     from torchvision.utils import save_image
+
     save_image(img.float() / 255.0, path)
 
 
@@ -40,7 +40,7 @@ def stat(name: str, x: torch.Tensor, n: int = 5) -> None:
         f"max={x_f[finite].max().item():.4f} "
         f"mean={x_f[finite].mean().item():.4f} "
         f"std={x_f[finite].std().item():.4f} "
-        f"finite={finite.float().mean().item()*100:.2f}%"
+        f"finite={finite.float().mean().item() * 100:.2f}%"
     )
     print(msg)
     with open("log.txt", "a", encoding="utf-8") as f:

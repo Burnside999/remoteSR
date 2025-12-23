@@ -1,4 +1,5 @@
 import argparse
+
 import torch.multiprocessing as mp
 
 from remoteSR.infer import run_inference
@@ -7,7 +8,11 @@ from remoteSR.train import run_training
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="remoteSR entrypoint")
-    parser.add_argument("--config", default="config/default.yaml", help="Path to config file (yaml/json)")
+    parser.add_argument(
+        "--config",
+        default="config/default.yaml",
+        help="Path to config file (yaml/json)",
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 

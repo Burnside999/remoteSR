@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+import os
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -8,7 +9,6 @@ from tqdm import tqdm
 
 from .io import save_tensor_as_png
 
-import os
 
 def build_optimizer(
     model: nn.Module,
@@ -36,22 +36,25 @@ def build_optimizer(
 
 
 @torch.no_grad()
-def _move_to_device(batch: Dict[str, Any], device: torch.device) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
+def _move_to_device(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:
+    out: dict[str, Any] = {}
     for key, value in batch.items():
-        out[key] = value.to(device, non_blocking=True) if torch.is_tensor(value) else value
+        out[key] = (
+            value.to(device, non_blocking=True) if torch.is_tensor(value) else value
+        )
     return out
+
 
 def train_step(
     model: nn.Module,
     criterion: nn.Module,
     optimizer: torch.optim.Optimizer,
-    batch: Dict[str, Any],
+    batch: dict[str, Any],
     device: torch.device,
-    scaler: Optional[torch.cuda.amp.GradScaler] = None,
+    scaler: torch.cuda.amp.GradScaler | None = None,
     amp: bool = True,
-    grad_clip_norm: Optional[float] = 1.0,
-) -> Dict[str, float]:
+    grad_clip_norm: float | None = 1.0,
+) -> dict[str, float]:
     """
     One forward/backward step for semi-supervised SR.
     """
@@ -68,14 +71,28 @@ def train_step(
     optimizer.zero_grad(set_to_none=True)
 
     if scaler is None:
-        total, logs = criterion(y_lr, x_ls_hr, mask_lr=mask_lr, mask_hr=mask_hr, x_hr_gt=x_hr_gt, has_hr_gt=has_hr_gt)
+        total, logs = criterion(
+            y_lr,
+            x_ls_hr,
+            mask_lr=mask_lr,
+            mask_hr=mask_hr,
+            x_hr_gt=x_hr_gt,
+            has_hr_gt=has_hr_gt,
+        )
         total.backward()
         if grad_clip_norm is not None:
             torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip_norm)
         optimizer.step()
     else:
         with torch.amp.autocast("cuda", enabled=amp):
-            total, logs = criterion(y_lr, x_ls_hr, mask_lr=mask_lr, mask_hr=mask_hr, x_hr_gt=x_hr_gt, has_hr_gt=has_hr_gt)
+            total, logs = criterion(
+                y_lr,
+                x_ls_hr,
+                mask_lr=mask_lr,
+                mask_hr=mask_hr,
+                x_hr_gt=x_hr_gt,
+                has_hr_gt=has_hr_gt,
+            )
 
         scaler.scale(total).backward()
 
@@ -96,14 +113,14 @@ def train_one_epoch(
     optimizer: torch.optim.Optimizer,
     dataloader,
     device: torch.device,
-    scaler: Optional[torch.cuda.amp.GradScaler] = None,
+    scaler: torch.cuda.amp.GradScaler | None = None,
     amp: bool = True,
-    grad_clip_norm: Optional[float] = 1.0,
-) -> Dict[str, float]:
+    grad_clip_norm: float | None = 1.0,
+) -> dict[str, float]:
     """
     Minimal epoch loop for a given dataloader.
     """
-    running: Dict[str, float] = {}
+    running: dict[str, float] = {}
     count = 0
 
     for batch in tqdm(dataloader, desc=f"Epoch {epoch}"):
@@ -132,7 +149,7 @@ def evaluate_lr_reconstruction(
     dataloader,
     device: torch.device,
     desc: str = "Eval",
-) -> Dict[str, float]:
+) -> dict[str, float]:
     """
     Evaluate measurement consistency on LR-only data by comparing the model's LR reconstruction
     with the input LR frames. This avoids direct HR comparisons when LR/HR are misaligned.
@@ -140,10 +157,7 @@ def evaluate_lr_reconstruction(
     was_training = model.training
     model.eval()
 
-    total_psnr = 0.0
-    total_samples = 0
-
-    output = 'testres'
+    output = "testres"
 
     os.makedirs(output, exist_ok=True)
 
@@ -153,7 +167,7 @@ def evaluate_lr_reconstruction(
         batch = _move_to_device(batch, device)
         y_lr = batch["y_lr"]
         x_hat = model(y_lr)
-        save_tensor_as_png(x_hat, os.path.join(output, f'{batch_i}.png'))
+        save_tensor_as_png(x_hat, os.path.join(output, f"{batch_i}.png"))
         batch_i += 1
 
     if was_training:

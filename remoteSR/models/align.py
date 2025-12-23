@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from typing import Tuple, Union
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -26,6 +24,7 @@ class SoftShiftAligner(nn.Module):
     ⚠️ Memory note:
       unfold allocates (B, C*win^2, H*W), so please use patches in training.
     """
+
     def __init__(
         self,
         window_size: int = 9,
@@ -45,7 +44,7 @@ class SoftShiftAligner(nn.Module):
         query: torch.Tensor,
         key: torch.Tensor,
         return_weights: bool = False,
-    ) -> Union[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             query: (B, C, H, W) from prediction
@@ -71,18 +70,18 @@ class SoftShiftAligner(nn.Module):
         # Extract local patches from key: (B, C*win*win, H*W)
         key_patches = F.unfold(key_n, kernel_size=win, padding=pad)  # (B, C*K, HW)
         K = win * win
-        key_patches = key_patches.view(B, C, K, H * W)              # (B, C, K, HW)
+        key_patches = key_patches.view(B, C, K, H * W)  # (B, C, K, HW)
 
-        q = query_n.view(B, C, H * W)                               # (B, C, HW)
+        q = query_n.view(B, C, H * W)  # (B, C, HW)
 
         # Similarity: dot product over C -> (B, K, HW)
-        sim = (key_patches * q.unsqueeze(2)).sum(dim=1)             # (B, K, HW)
+        sim = (key_patches * q.unsqueeze(2)).sum(dim=1)  # (B, K, HW)
         sim = sim / self.temperature
 
-        weights = F.softmax(sim, dim=1)                              # (B, K, HW)
+        weights = F.softmax(sim, dim=1)  # (B, K, HW)
 
         # Weighted sum -> aligned key features: (B, C, HW) -> (B, C, H, W)
-        aligned = (key_patches * weights.unsqueeze(1)).sum(dim=2)   # (B, C, HW)
+        aligned = (key_patches * weights.unsqueeze(1)).sum(dim=2)  # (B, C, HW)
         aligned = aligned.view(B, C, H, W)
 
         if return_weights:

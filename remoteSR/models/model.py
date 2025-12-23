@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -58,6 +57,7 @@ class SemiSupervisedSRModel(nn.Module):
       f_ls  = model.phi(x_landsat)
       L_match = |f_hat - align(f_hat, f_ls_detach)|   (teacher stopgrad)
     """
+
     def __init__(self, cfg: SemiSRConfig):
         super().__init__()
         assert cfg.scale == 4, "This wrapper is configured for x4."
@@ -90,18 +90,18 @@ class SemiSupervisedSRModel(nn.Module):
             window_size=8,
             mlp_ratio=2.0,
         )
-        
+
         self.aligner = SoftShiftAligner(
             window_size=cfg.align_window,
             temperature=cfg.align_temperature,
             normalize=cfg.align_normalize,
         )
-        '''
+        """
         self.aligner = SoftShiftAlignerStreaming(
             window_size=cfg.align_window,
             temperature=cfg.align_temperature
         )
-        '''
+        """
 
     def forward(
         self,

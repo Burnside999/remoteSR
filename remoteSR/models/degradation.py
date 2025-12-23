@@ -20,6 +20,7 @@ class LearnablePSFDownsampler(nn.Module):
     - This is a *model* of the sensor degradation. You train it (or jointly finetune).
     - Kernel normalization keeps it stable and interpretable.
     """
+
     def __init__(
         self,
         hr_channels: int,
@@ -70,7 +71,9 @@ class LearnablePSFDownsampler(nn.Module):
                     self.mix.bias.zero_()
         else:
             # Kaiming init
-            nn.init.kaiming_normal_(self.mix.weight, a=0.0, mode="fan_in", nonlinearity="linear")
+            nn.init.kaiming_normal_(
+                self.mix.weight, a=0.0, mode="fan_in", nonlinearity="linear"
+            )
             if self.mix.bias is not None:
                 nn.init.zeros_(self.mix.bias)
 
@@ -81,7 +84,9 @@ class LearnablePSFDownsampler(nn.Module):
             k = self.kernel_size
             cy = k // 2
             cx = k // 2
-            self.kernel_param[..., cy, cx] = 5.0  # a bit peaky so softmax concentrates near center
+            self.kernel_param[..., cy, cx] = (
+                5.0  # a bit peaky so softmax concentrates near center
+            )
 
     def normalized_kernel(self) -> torch.Tensor:
         """

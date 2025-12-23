@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 import cv2
 import numpy as np
@@ -11,7 +10,9 @@ from remoteSR.config import load_config
 from remoteSR.models import SemiSRConfig, SemiSupervisedSRModel
 
 
-def _load_image(path: Path, resize_factor: float, device: torch.device) -> Optional[torch.Tensor]:
+def _load_image(
+    path: Path, resize_factor: float, device: torch.device
+) -> torch.Tensor | None:
     img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
     if img is None:
         return None
