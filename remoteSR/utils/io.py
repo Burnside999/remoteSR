@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Iterable
+from pathlib import Path
 
+import cv2
+import numpy as np
 import torch
 
 
@@ -45,3 +49,35 @@ def stat(name: str, x: torch.Tensor, n: int = 5) -> None:
     print(msg)
     with open("log.txt", "a", encoding="utf-8") as f:
         f.write(msg + "\n")
+
+
+def load_image_tensor(
+    path: Path,
+    resize_factor: float,
+    device: torch.device,
+    percentile_clip: Iterable[float] | None = None,
+) -> torch.Tensor | None:
+    """
+    Load an image from disk, optionally resize it and clip percentile ranges, and
+    return a float32 tensor on the requested device.
+    """
+    img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
+    if img is None:
+        return None
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    if resize_factor and resize_factor != 1.0:
+        new_h = max(1, int(img.shape[0] * resize_factor))
+        new_w = max(1, int(img.shape[1] * resize_factor))
+        img = cv2.resize(img, (new_w, new_h))
+    img = img.astype(np.float32) / 255.0
+
+    if percentile_clip is not None:
+        lo, hi = percentile_clip
+        lo_p, hi_p = (float(lo), float(hi))
+        lo_v = np.percentile(img, lo_p)
+        hi_v = np.percentile(img, hi_p)
+        img = (img - lo_v) / (hi_v - lo_v + 1e-8)
+        img = np.clip(img, 0, 1)
+
+    tensor = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).to(device)
+    return tensor

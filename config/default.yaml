@@ -56,6 +56,9 @@ loss:
   lambda_tv: 0.00001
   lambda_pix: 0.0
   lambda_grad: 0.1
+  lambda_texture: 0.1
+  texture_kernel_size: 9
+  texture_min_variance: 0.001
   use_mask: false
   cx_bandwidth: 0.1
   cx_max_samples: 1024

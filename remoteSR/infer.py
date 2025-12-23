@@ -8,22 +8,7 @@ import torch
 
 from remoteSR.config import load_config
 from remoteSR.models import SemiSRConfig, SemiSupervisedSRModel
-
-
-def _load_image(
-    path: Path, resize_factor: float, device: torch.device
-) -> torch.Tensor | None:
-    img = cv2.imread(str(path), cv2.IMREAD_UNCHANGED)
-    if img is None:
-        return None
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    if resize_factor and resize_factor != 1.0:
-        new_h = max(1, int(img.shape[0] * resize_factor))
-        new_w = max(1, int(img.shape[1] * resize_factor))
-        img = cv2.resize(img, (new_w, new_h))
-    img = img.astype(np.float32) / 255.0
-    tensor = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).to(device)
-    return tensor
+from remoteSR.utils import load_image_tensor
 
 
 def run_inference(
@@ -61,7 +46,12 @@ def run_inference(
     lo_p, hi_p = percentile_clip if len(percentile_clip) == 2 else (1, 99)
 
     for img_path in sorted([p for p in input_root.iterdir() if p.is_file()]):
-        tensor = _load_image(img_path, resize_factor, device)
+        tensor = load_image_tensor(
+            img_path,
+            resize_factor=resize_factor,
+            device=device,
+            percentile_clip=None,
+        )
         if tensor is None:
             print(f"Skip unreadable image: {img_path}")
             continue

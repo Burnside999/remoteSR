@@ -7,35 +7,13 @@ from torch.utils.data import DataLoader
 
 from remoteSR.config import load_config
 from remoteSR.data import EvalLRDataset, SRDataset
-from remoteSR.models import LossWeights, SemiSRConfig, SemiSRLoss, SemiSupervisedSRModel
-from remoteSR.utils.training import (
+from remoteSR.engine import (
     build_optimizer,
     evaluate_lr_reconstruction,
+    export_onnx_checkpoint,
     train_one_epoch,
 )
-
-
-def _maybe_export_onnx(
-    model: torch.nn.Module,
-    output_dir: Path,
-    epoch: int,
-    in_channels: int,
-    opset: int = 18,
-) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    model.eval()
-    dummy_input = torch.randn(
-        1, in_channels, 224, 224, device=next(model.parameters()).device
-    )
-    torch.onnx.export(
-        model,
-        dummy_input,
-        output_dir / f"model_epoch_{epoch}.onnx",
-        opset_version=opset,
-        input_names=["y_lr"],
-        output_names=["output"],
-        dynamic_axes={"y_lr": {0: "batch"}, "output": {0: "batch"}},
-    )
+from remoteSR.models import LossWeights, SemiSRConfig, SemiSRLoss, SemiSupervisedSRModel
 
 
 def run_training(config_path: str | Path | None = None) -> None:
@@ -90,6 +68,7 @@ def run_training(config_path: str | Path | None = None) -> None:
         lambda_tv=loss_cfg["lambda_tv"],
         lambda_pix=loss_cfg["lambda_pix"],
         lambda_grad=loss_cfg["lambda_grad"],
+        lambda_texture=loss_cfg["lambda_texture"],
     )
     criterion = SemiSRLoss(
         model=model,
@@ -97,6 +76,8 @@ def run_training(config_path: str | Path | None = None) -> None:
         cx_bandwidth=loss_cfg["cx_bandwidth"],
         cx_max_samples=loss_cfg["cx_max_samples"],
         use_mask=loss_cfg.get("use_mask", False),
+        texture_kernel_size=loss_cfg.get("texture_kernel_size", 9),
+        texture_min_variance=loss_cfg.get("texture_min_variance", 1e-3),
     ).to(device)
 
     train_cfg = cfg["training"]
@@ -147,7 +128,7 @@ def run_training(config_path: str | Path | None = None) -> None:
 
             onnx_cfg = train_cfg.get("onnx_export", {})
             if onnx_cfg.get("enabled", False):
-                _maybe_export_onnx(
+                export_onnx_checkpoint(
                     model,
                     Path(onnx_cfg.get("dir", "onnx")),
                     epoch,
