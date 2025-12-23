@@ -5,6 +5,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
+from torch.profiler import ProfilerActivity, profile, tensorboard_trace_handler
 from tqdm import tqdm
 
 from remoteSR.utils.io import save_tensor_as_png
@@ -91,6 +92,8 @@ def train_one_epoch(
     scaler: torch.cuda.amp.GradScaler | None = None,
     amp: bool = True,
     grad_clip_norm: float | None = 1.0,
+    trace_step: int | None = None,
+    trace_dir: Path | None = None,
 ) -> dict[str, float]:
     """
     Minimal epoch loop for a given dataloader.
@@ -99,16 +102,42 @@ def train_one_epoch(
     count = 0
 
     for batch in tqdm(dataloader, desc=f"Epoch {epoch}"):
-        logs = train_step(
-            model=model,
-            criterion=criterion,
-            optimizer=optimizer,
-            batch=batch,
-            device=device,
-            scaler=scaler,
-            amp=amp,
-            grad_clip_norm=grad_clip_norm,
-        )
+        step_index = count + 1
+        if trace_step is not None and step_index == trace_step:
+            trace_dir = trace_dir or Path("traces")
+            trace_dir.mkdir(parents=True, exist_ok=True)
+            activities = [ProfilerActivity.CPU]
+            if torch.cuda.is_available():
+                activities.append(ProfilerActivity.CUDA)
+            with profile(
+                activities=activities,
+                record_shapes=True,
+                profile_memory=True,
+                with_stack=True,
+                on_trace_ready=tensorboard_trace_handler(str(trace_dir)),
+            ) as prof:
+                logs = train_step(
+                    model=model,
+                    criterion=criterion,
+                    optimizer=optimizer,
+                    batch=batch,
+                    device=device,
+                    scaler=scaler,
+                    amp=amp,
+                    grad_clip_norm=grad_clip_norm,
+                )
+                prof.step()
+        else:
+            logs = train_step(
+                model=model,
+                criterion=criterion,
+                optimizer=optimizer,
+                batch=batch,
+                device=device,
+                scaler=scaler,
+                amp=amp,
+                grad_clip_norm=grad_clip_norm,
+            )
         count += 1
         for key, value in logs.items():
             running[key] = running.get(key, 0.0) + value

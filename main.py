@@ -16,7 +16,16 @@ def parse_args() -> argparse.Namespace:
 
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("train", help="Run training")
+    train_p = subparsers.add_parser("train", help="Run training")
+    train_p.add_argument(
+        "--trace-begin",
+        type=int,
+        help="1-based step index to profile with the torch profiler",
+    )
+    train_p.add_argument(
+        "--trace-dir",
+        help="Directory where profiler traces will be saved (defaults to training.trace.dir)",
+    )
 
     infer_p = subparsers.add_parser("infer", help="Run inference")
     infer_p.add_argument("--input_dir", help="Override input directory for inference")
@@ -30,7 +39,11 @@ def main() -> None:
     args = parse_args()
 
     if args.command == "train":
-        run_training(args.config)
+        run_training(
+            config_path=args.config,
+            trace_begin=args.trace_begin,
+            trace_dir=args.trace_dir,
+        )
     elif args.command == "infer":
         run_inference(
             config_path=args.config,

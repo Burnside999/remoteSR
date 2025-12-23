@@ -56,6 +56,11 @@ _DEFAULTS: dict[str, Any] = {
             "opset": 18,
         },
         "log_file": "log.txt",
+        "trace": {
+            "enabled": False,
+            "begin_step": 1,
+            "dir": "traces",
+        },
     },
     "loss": {
         "lambda_lr": 0.4,

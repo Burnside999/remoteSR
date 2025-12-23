@@ -48,6 +48,10 @@ training:
     dir: checkpoints/onnx
     opset: 18
   log_file: log.txt
+  trace:
+    enabled: false
+    begin_step: 1
+    dir: traces
 
 loss:
   lambda_lr: 1.0

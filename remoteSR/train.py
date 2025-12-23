@@ -16,7 +16,11 @@ from remoteSR.engine import (
 from remoteSR.models import LossWeights, SemiSRConfig, SemiSRLoss, SemiSupervisedSRModel
 
 
-def run_training(config_path: str | Path | None = None) -> None:
+def run_training(
+    config_path: str | Path | None = None,
+    trace_begin: int | None = None,
+    trace_dir: str | Path | None = None,
+) -> None:
     cfg = load_config(config_path)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -85,11 +89,27 @@ def run_training(config_path: str | Path | None = None) -> None:
     scaler = (
         torch.amp.GradScaler("cuda") if use_amp and torch.cuda.is_available() else None
     )
+    trace_cfg = train_cfg.get("trace", {})
+    trace_enabled = bool(trace_cfg.get("enabled", False))
+    trace_step = trace_begin if trace_begin is not None else trace_cfg.get("begin_step")
+    trace_output_dir = (
+        Path(trace_dir)
+        if trace_dir is not None
+        else Path(trace_cfg.get("dir", "traces"))
+    )
+    if trace_begin is not None:
+        trace_enabled = True
 
     log_file = Path(train_cfg["log_file"])
     log_file.parent.mkdir(parents=True, exist_ok=True)
 
+    traced = False
     for epoch in range(1, train_cfg["epochs"] + 1):
+        current_trace_step = (
+            int(trace_step)
+            if trace_enabled and trace_step is not None and not traced
+            else None
+        )
         logs: dict[str, float] = train_one_epoch(
             epoch=epoch,
             model=model,
@@ -100,7 +120,10 @@ def run_training(config_path: str | Path | None = None) -> None:
             scaler=scaler,
             amp=use_amp,
             grad_clip_norm=train_cfg.get("grad_clip_norm", 1.0),
+            trace_step=current_trace_step,
+            trace_dir=trace_output_dir if current_trace_step is not None else None,
         )
+        traced = traced or current_trace_step is not None
 
         if eval_loader is not None and (epoch % eval_every == 0):
             evaluate_lr_reconstruction(
