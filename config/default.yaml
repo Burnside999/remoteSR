@@ -1,0 +1,68 @@
+model:
+  lr_channels: 3
+  hr_channels: 3
+  scale: 4
+  num_feats: 96
+  num_groups: 6
+  blocks_per_group: 12
+  ca_reduction: 16
+  res_scale: 0.1
+  kernel_size: 9
+  share_kernel: false
+  use_radiometric_affine: true
+  distill_feat_channels: 64
+  distill_feat_layers: 3
+  distill_feat_downsample: 2
+  align_window: 9
+  align_temperature: 0.07
+  align_normalize: true
+
+data:
+  train_lr_dir: 256dataset/Himawari
+  train_hr_dir: 256dataset/Landsat
+  scale: 4
+  batch_size: 1
+  num_workers: 4
+
+evaluation:
+  enabled: true
+  lr_dir: testdata
+  batch_size: 1
+  num_workers: 2
+  every: 1
+
+optimizer:
+  lr_g: 0.0002
+  lr_d: 0.0001
+  lr_phi: 0.0002
+  weight_decay: 0.0001
+
+training:
+  epochs: 200
+  amp: false
+  grad_clip_norm: 1.0
+  save_every: 10
+  output_dir: checkpoints
+  onnx_export:
+    enabled: false
+    dir: checkpoints/onnx
+    opset: 18
+  log_file: log.txt
+
+loss:
+  lambda_lr: 1.0
+  lambda_match: 0.2
+  lambda_ctx: 0.2
+  lambda_tv: 0.00001
+  lambda_pix: 0.0
+  lambda_grad: 0.1
+  use_mask: false
+  cx_bandwidth: 0.1
+  cx_max_samples: 1024
+
+inference:
+  checkpoint: good/nowindow64.pt
+  input_dir: testdata
+  output_dir: testoutput
+  resize_factor: 0.5
+  percentile_clip: [1, 99]
