@@ -56,15 +56,38 @@ class PretrainPairDataset(Dataset):
         path = os.path.join(self.hr_dir, self.hr_files[idx])
         img = self._read_image(path)
 
-        views = []
-        for i in range(self.view_config.num_views):
-            crop_size = (
-                self.view_config.crop_size
-                if i < 2
-                else self.view_config.local_crop_size
-            )
-            view = self.pipeline.sample_view(img, crop_size)
+        H, W, C = img.shape
+        gsz = self.view_config.crop_size
+        lsz = self.view_config.local_crop_size
+
+        # --- 1) sample ONE global crop coord (anchor crop) ---
+        if H < gsz or W < gsz:
+            raise ValueError(f"Image too small for crop: {img.shape}, crop_size={gsz}")
+
+        y0 = int(torch.randint(0, H - gsz + 1, (1,)).item())
+        x0 = int(torch.randint(0, W - gsz + 1, (1,)).item())
+        crop_g = img[y0 : y0 + gsz, x0 : x0 + gsz, :]  # (gsz,gsz,C)
+
+        views: list[torch.Tensor] = []
+
+        # --- 2) first two views: same crop, different stochastic aug/degrade ---
+        for i in range(min(2, self.view_config.num_views)):
+            view = self.pipeline.sample_view_from_crop(crop_g)
             view = torch.from_numpy(view).permute(2, 0, 1).float()
             views.append(view)
 
-        return {"views": views}
+        # --- 3) local views: must be inside the global crop ---
+        for i in range(2, self.view_config.num_views):
+            if gsz < lsz:
+                raise ValueError("local_crop_size should be <= crop_size")
+            ly0 = int(torch.randint(0, gsz - lsz + 1, (1,)).item())
+            lx0 = int(torch.randint(0, gsz - lsz + 1, (1,)).item())
+            crop_l = crop_g[ly0 : ly0 + lsz, lx0 : lx0 + lsz, :]
+            view = self.pipeline.sample_view_from_crop(crop_l)
+            view = torch.from_numpy(view).permute(2, 0, 1).float()
+            views.append(view)
+
+        return {
+            "views": views,
+            "meta": {"file": self.hr_files[idx], "xywh": (x0, y0, gsz, gsz)},
+        }

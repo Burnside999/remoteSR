@@ -21,6 +21,7 @@ class DegradationConfig:
     blur_kernel_max: int = 7
     blur_sigma_min: float = 0.1
     blur_sigma_max: float = 2.0
+    downsample_prob: float = 0.0
     downsample_scale: int = 4
     noise_std_min: float = 0.0
     noise_std_max: float = 0.02
@@ -81,13 +82,14 @@ class AugmentPipeline:
             )
             img = cv2.GaussianBlur(img, (kernel, kernel), sigma)
 
-        scale = max(1, int(self.degradation.downsample_scale))
-        if scale > 1:
-            h, w = img.shape[:2]
-            img = cv2.resize(
-                img, (w // scale, h // scale), interpolation=cv2.INTER_AREA
-            )
-            img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
+        if np.random.rand() < self.degradation.downsample_prob:
+            scale = max(1, int(self.degradation.downsample_scale))
+            if scale > 1:
+                h, w = img.shape[:2]
+                img = cv2.resize(
+                    img, (w // scale, h // scale), interpolation=cv2.INTER_AREA
+                )
+                img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
 
         noise_std = np.random.uniform(
             self.degradation.noise_std_min, self.degradation.noise_std_max
@@ -107,9 +109,13 @@ class AugmentPipeline:
 
         return np.clip(img, 0.0, 1.0)
 
-    def sample_view(self, img: np.ndarray, crop_size: int) -> np.ndarray:
-        view = self._random_crop(img, crop_size)
+    def sample_view_from_crop(self, crop: np.ndarray) -> np.ndarray:
+        view = crop
         view = self._random_flip_rotate(view)
         view = self._random_translate(view)
         view = self._degrade(view)
         return view
+
+    def sample_view(self, img: np.ndarray, crop_size: int) -> np.ndarray:
+        crop = self._random_crop(img, crop_size)
+        return self.sample_view_from_crop(crop)
