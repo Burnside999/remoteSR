@@ -5,6 +5,7 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from remoteSR.tasks.base import Task
 
@@ -67,7 +68,7 @@ class Trainer:
     ) -> dict[str, float]:
         running: dict[str, float] = {}
         count = 0
-        for batch in dataloader:
+        for batch in tqdm(dataloader, desc=f"Epoch {epoch}"):
             if train:
                 logs = self.task.train_step(
                     batch=batch,
