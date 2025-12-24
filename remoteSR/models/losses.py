@@ -153,8 +153,8 @@ class SemiSRLoss(nn.Module):
 
         l_texture = texture_penalty(
             x_hat.float(),
+            x_ls_hr.float(),
             kernel_size=self.texture_kernel_size,
-            min_variance=self.texture_min_variance,
         )
 
         l_pix = x_hat.new_tensor(0.0)

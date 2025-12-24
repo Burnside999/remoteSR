@@ -56,11 +56,11 @@ training:
 loss:
   lambda_lr: 1.0
   lambda_match: 0.2
-  lambda_ctx: 0.2
-  lambda_tv: 0.00001
+  lambda_ctx: 0.0
+  lambda_tv: 0.0
   lambda_pix: 0.0
-  lambda_grad: 0.1
-  lambda_texture: 0.1
+  lambda_grad: 0.0
+  lambda_texture: 0.0
   texture_kernel_size: 9
   texture_min_variance: 0.001
   use_mask: false

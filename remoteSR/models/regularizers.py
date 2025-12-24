@@ -100,13 +100,30 @@ def _local_variance(x: torch.Tensor, kernel_size: int) -> torch.Tensor:
     return var
 
 
+def _standardize_per_image(x, eps=1e-6):
+    # x: (B,C,H,W)
+    mean = x.mean(dim=(2, 3), keepdim=True)
+    std = x.std(dim=(2, 3), keepdim=True)
+    return (x - mean) / (std + eps)
+
+
 def texture_penalty(
-    x: torch.Tensor, kernel_size: int = 9, min_variance: float = 1e-3
+    x_hat: torch.Tensor, x_ls_hr: torch.Tensor, kernel_size: int = 9
 ) -> torch.Tensor:
-    """
-    Penalize overly smooth (large flat color block) outputs by enforcing a minimum
-    amount of local variance. When the variance inside a window falls below
-    ``min_variance`` a penalty is applied.
-    """
-    var = _local_variance(x, kernel_size)
-    return torch.relu(min_variance - var).mean()
+    x_hat_n = _standardize_per_image(x_hat.float())
+    x_ls_n = _standardize_per_image(x_ls_hr.float())
+
+    # 局部方差（texture 强弱）
+    var_hat = _local_variance(x_hat_n, kernel_size=kernel_size)
+    var_ls = _local_variance(x_ls_n, kernel_size=kernel_size)
+
+    # 更稳定（可选）
+    var_hat = torch.log1p(var_hat)
+    var_ls = torch.log1p(var_ls)
+
+    var_hat_q = F.normalize(var_hat, dim=1, eps=1e-6)
+    var_ls_k = F.normalize(var_ls, dim=1, eps=1e-6)
+
+    l_texture = F.l1_loss(var_hat_q, var_ls_k)
+
+    return l_texture
