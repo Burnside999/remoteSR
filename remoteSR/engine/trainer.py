@@ -104,6 +104,7 @@ class Trainer:
         epoch: int,
         train_metrics: dict[str, float],
         val_metrics: dict[str, float] | None = None,
+        routine_save: bool = False,
     ) -> None:
         self.config.save_dir.mkdir(parents=True, exist_ok=True)
         ckpt = {
@@ -132,6 +133,11 @@ class Trainer:
         if improved:
             self.best_metric = metric_value
             torch.save(ckpt, self.config.save_dir / "best.pth")
+        if routine_save:
+            torch.save(
+                ckpt,
+                self.config.save_dir / f"epoch_{epoch:04d}.pth",
+            )
 
     def load_ckpt(self, path: Path) -> int:
         ckpt = torch.load(path, map_location=self.device)
@@ -166,6 +172,8 @@ class Trainer:
                     self.log_metrics(epoch, val_metrics, prefix="val")
 
             if epoch % self.config.save_every == 0:
-                self.save_ckpt(epoch, train_metrics, val_metrics)
+                self.save_ckpt(epoch, train_metrics, val_metrics, True)
+            else:
+                self.save_ckpt(epoch, train_metrics, val_metrics, False)
 
         self.task.on_train_end(self.models, self.config.save_dir)
