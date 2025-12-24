@@ -1,75 +1,214 @@
 model:
+  # Input low-resolution channel count.
   lr_channels: 3
+  # Output high-resolution channel count.
   hr_channels: 3
+  # Super-resolution scale factor.
   scale: 4
+  # Base feature width for SR backbone.
   num_feats: 96
+  # Number of residual groups in the backbone.
   num_groups: 6
+  # Blocks per residual group.
   blocks_per_group: 12
+  # Channel attention reduction ratio.
   ca_reduction: 16
+  # Residual scaling factor.
   res_scale: 0.1
+  # Convolution kernel size in the encoder/decoder.
   kernel_size: 9
+  # Share kernel between up/down blocks.
   share_kernel: false
+  # Apply radiometric affine alignment for cross-sensor SR.
   use_radiometric_affine: true
+  # Distillation feature channel width.
   distill_feat_channels: 64
+  # Number of distillation feature layers.
   distill_feat_layers: 3
+  # Downsample factor for distillation features.
   distill_feat_downsample: 2
+  # Alignment window size for local matching.
   align_window: 9
+  # Temperature for alignment softmax.
   align_temperature: 0.07
+  # Normalize alignment features before matching.
   align_normalize: true
 
 data:
+  # Training low-resolution dataset directory.
   train_lr_dir: 256dataset/Himawari
+  # Training high-resolution dataset directory.
   train_hr_dir: 256dataset/Landsat
+  # Dataset scale factor (should match model.scale).
   scale: 4
+  # Batch size for SR GAN training.
   batch_size: 1
+  # DataLoader worker count for SR GAN training.
   num_workers: 4
 
 evaluation:
+  # Run evaluation during training.
   enabled: true
+  # Evaluation LR directory.
   lr_dir: testdata
+  # Evaluation batch size.
   batch_size: 1
+  # Evaluation DataLoader worker count.
   num_workers: 2
+  # Evaluate every N epochs.
   every: 1
 
 optimizer:
+  # Generator learning rate.
   lr_g: 0.0002
+  # Discriminator learning rate.
   lr_d: 0.0001
+  # Phi feature extractor learning rate.
   lr_phi: 0.0002
+  # Weight decay for all optimizers.
   weight_decay: 0.0001
 
 training:
+  # Total SR GAN training epochs.
   epochs: 200
+  # Enable automatic mixed precision.
   amp: false
+  # Gradient clipping max norm.
   grad_clip_norm: 1.0
+  # Save checkpoint every N epochs.
   save_every: 10
+  # Output directory for SR GAN checkpoints.
   output_dir: checkpoints
   onnx_export:
+    # Export ONNX after training.
     enabled: false
+    # Output directory for ONNX export.
     dir: checkpoints/onnx
+    # ONNX opset version.
     opset: 18
+  # Training log file path.
   log_file: log.txt
   trace:
+    # Enable PyTorch profiler tracing.
     enabled: false
+    # Start tracing at this step.
     begin_step: 1
+    # Output directory for trace files.
     dir: traces
 
 loss:
+  # Loss weight for LR reconstruction.
   lambda_lr: 1.0
+  # Loss weight for correspondence/matching.
   lambda_match: 0.2
+  # Loss weight for contextual similarity.
   lambda_ctx: 0.0
+  # Loss weight for total variation.
   lambda_tv: 0.0
+  # Loss weight for pixel-wise loss.
   lambda_pix: 0.0
+  # Loss weight for gradient loss.
   lambda_grad: 0.0
+  # Loss weight for texture consistency.
   lambda_texture: 0.0
+  # Kernel size for texture loss.
   texture_kernel_size: 9
+  # Minimum variance used for texture loss.
   texture_min_variance: 0.001
+  # Apply masked loss for invalid pixels.
   use_mask: false
+  # Bandwidth for contextual loss.
   cx_bandwidth: 0.1
+  # Max samples for contextual loss.
   cx_max_samples: 1024
 
 inference:
+  # Checkpoint path for inference.
   checkpoint: good/nowindow64.pt
+  # Directory containing input LR images.
   input_dir: testdata
+  # Directory to write SR outputs.
   output_dir: testoutput
+  # Resize factor before inference.
   resize_factor: 0.5
+  # Percentile clip range for output normalization.
   percentile_clip: [1, 99]
+
+pretrain:
+  data:
+    # HR directory for phi pretraining.
+    hr_dir: dataset/phi_hr
+    # Batch size for phi pretraining.
+    batch_size: 16
+    # DataLoader worker count for phi pretraining.
+    num_workers: 4
+    # Global crop size.
+    crop_size: 96
+    # Local crop size.
+    local_crop_size: 64
+    # Number of additional local crops per image.
+    multi_crop: 0
+  optimizer:
+    # Learning rate for pretraining optimizer.
+    lr: 0.001
+    # Weight decay for pretraining optimizer.
+    weight_decay: 0.0001
+  training:
+    # Total epochs for phi pretraining.
+    epochs: 200
+    # Enable automatic mixed precision.
+    amp: false
+    # Gradient clipping max norm (optional).
+    grad_clip_norm: null
+    # Save checkpoint every N epochs.
+    save_every: 1
+    # Output directory for pretraining checkpoints.
+    output_dir: checkpoints
+    # Log file path (optional).
+    log_file: null
+  byol:
+    # Momentum for BYOL target encoder.
+    momentum: 0.996
+  dino:
+    # Student temperature.
+    tau_s: 0.1
+    # Teacher temperature.
+    tau_t: 0.04
+    # Center momentum for DINO.
+    center_momentum: 0.9
+    # Output dimension (k) for DINO.
+    k: 1024
+  augment:
+    # Max pixel translation for random shift.
+    max_translate: 4
+    # Horizontal flip probability.
+    hflip_prob: 0.5
+    # Vertical flip probability.
+    vflip_prob: 0.5
+    # Rotation probability.
+    rotate_prob: 0.5
+  degradation:
+    # Blur probability for degradation.
+    blur_prob: 0.8
+    # Minimum blur kernel size.
+    blur_kernel_min: 3
+    # Maximum blur kernel size.
+    blur_kernel_max: 7
+    # Minimum blur sigma.
+    blur_sigma_min: 0.1
+    # Maximum blur sigma.
+    blur_sigma_max: 2.0
+    # Downsample scale for degradation.
+    downsample_scale: 4
+    # Minimum noise standard deviation.
+    noise_std_min: 0.0
+    # Maximum noise standard deviation.
+    noise_std_max: 0.02
+    # Color jitter probability.
+    jitter_prob: 0.8
+    # Color jitter brightness scale.
+    jitter_brightness: 0.1
+    # Color jitter contrast scale.
+    jitter_contrast: 0.1
+  # Save full pretraining checkpoints (larger files).
+  save_full_pretrain: false

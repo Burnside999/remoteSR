@@ -47,30 +47,30 @@ class CLIArgs:
     freeze_phi: bool
     lr: float | None
     weight_decay: float | None
-    byol_momentum: float
-    dino_tau_s: float
-    dino_tau_t: float
-    dino_center_momentum: float
-    dino_k: int
-    multi_crop: int
-    crop_size: int
-    local_crop_size: int
-    max_translate: int
-    hflip_prob: float
-    vflip_prob: float
-    rotate_prob: float
-    blur_prob: float
-    blur_kernel_min: int
-    blur_kernel_max: int
-    blur_sigma_min: float
-    blur_sigma_max: float
-    downsample_scale: int
-    noise_std_min: float
-    noise_std_max: float
-    jitter_prob: float
-    jitter_brightness: float
-    jitter_contrast: float
-    save_full_pretrain: bool
+    byol_momentum: float | None
+    dino_tau_s: float | None
+    dino_tau_t: float | None
+    dino_center_momentum: float | None
+    dino_k: int | None
+    multi_crop: int | None
+    crop_size: int | None
+    local_crop_size: int | None
+    max_translate: int | None
+    hflip_prob: float | None
+    vflip_prob: float | None
+    rotate_prob: float | None
+    blur_prob: float | None
+    blur_kernel_min: int | None
+    blur_kernel_max: int | None
+    blur_sigma_min: float | None
+    blur_sigma_max: float | None
+    downsample_scale: int | None
+    noise_std_min: float | None
+    noise_std_max: float | None
+    jitter_prob: float | None
+    jitter_brightness: float | None
+    jitter_contrast: float | None
+    save_full_pretrain: bool | None
 
 
 def set_seed(seed: int) -> None:
@@ -134,84 +134,193 @@ def build_sr_task_config(args: CLIArgs) -> tuple[SRTaskConfig, TrainerConfig]:
 def build_pretrain_task_config(
     args: CLIArgs,
 ) -> tuple[BYOLTaskConfig | DINOTaskConfig, TrainerConfig]:
-    if args.train_hr_dir is None:
-        raise ValueError("--train_hr_dir is required for phi pretraining tasks")
+    cfg = load_config(args.config)
+    pretrain_cfg = cfg.get("pretrain", {})
+    pretrain_data = pretrain_cfg.get("data", {})
+
+    train_hr_dir = args.train_hr_dir or pretrain_data.get("hr_dir")
+    if train_hr_dir is None:
+        raise ValueError(
+            "--train_hr_dir is required for phi pretraining tasks (or set pretrain.data.hr_dir)"
+        )
 
     augment = AugmentConfig(
-        hflip_prob=args.hflip_prob,
-        vflip_prob=args.vflip_prob,
-        rotate_prob=args.rotate_prob,
-        max_translate=args.max_translate,
+        hflip_prob=args.hflip_prob
+        if args.hflip_prob is not None
+        else pretrain_cfg.get("augment", {}).get("hflip_prob", 0.5),
+        vflip_prob=args.vflip_prob
+        if args.vflip_prob is not None
+        else pretrain_cfg.get("augment", {}).get("vflip_prob", 0.5),
+        rotate_prob=args.rotate_prob
+        if args.rotate_prob is not None
+        else pretrain_cfg.get("augment", {}).get("rotate_prob", 0.5),
+        max_translate=args.max_translate
+        if args.max_translate is not None
+        else pretrain_cfg.get("augment", {}).get("max_translate", 4),
     )
 
     degradation = DegradationConfig(
-        blur_prob=args.blur_prob,
-        blur_kernel_min=args.blur_kernel_min,
-        blur_kernel_max=args.blur_kernel_max,
-        blur_sigma_min=args.blur_sigma_min,
-        blur_sigma_max=args.blur_sigma_max,
-        downsample_scale=args.downsample_scale,
-        noise_std_min=args.noise_std_min,
-        noise_std_max=args.noise_std_max,
-        jitter_prob=args.jitter_prob,
-        jitter_brightness=args.jitter_brightness,
-        jitter_contrast=args.jitter_contrast,
+        blur_prob=args.blur_prob
+        if args.blur_prob is not None
+        else pretrain_cfg.get("degradation", {}).get("blur_prob", 0.8),
+        blur_kernel_min=args.blur_kernel_min
+        if args.blur_kernel_min is not None
+        else pretrain_cfg.get("degradation", {}).get("blur_kernel_min", 3),
+        blur_kernel_max=args.blur_kernel_max
+        if args.blur_kernel_max is not None
+        else pretrain_cfg.get("degradation", {}).get("blur_kernel_max", 7),
+        blur_sigma_min=args.blur_sigma_min
+        if args.blur_sigma_min is not None
+        else pretrain_cfg.get("degradation", {}).get("blur_sigma_min", 0.1),
+        blur_sigma_max=args.blur_sigma_max
+        if args.blur_sigma_max is not None
+        else pretrain_cfg.get("degradation", {}).get("blur_sigma_max", 2.0),
+        downsample_scale=args.downsample_scale
+        if args.downsample_scale is not None
+        else pretrain_cfg.get("degradation", {}).get("downsample_scale", 4),
+        noise_std_min=args.noise_std_min
+        if args.noise_std_min is not None
+        else pretrain_cfg.get("degradation", {}).get("noise_std_min", 0.0),
+        noise_std_max=args.noise_std_max
+        if args.noise_std_max is not None
+        else pretrain_cfg.get("degradation", {}).get("noise_std_max", 0.02),
+        jitter_prob=args.jitter_prob
+        if args.jitter_prob is not None
+        else pretrain_cfg.get("degradation", {}).get("jitter_prob", 0.8),
+        jitter_brightness=args.jitter_brightness
+        if args.jitter_brightness is not None
+        else pretrain_cfg.get("degradation", {}).get("jitter_brightness", 0.1),
+        jitter_contrast=args.jitter_contrast
+        if args.jitter_contrast is not None
+        else pretrain_cfg.get("degradation", {}).get("jitter_contrast", 0.1),
     )
 
-    num_views = max(2, args.multi_crop + 2)
+    multi_crop = (
+        args.multi_crop
+        if args.multi_crop is not None
+        else pretrain_data.get("multi_crop", 0)
+    )
+    num_views = max(2, multi_crop + 2)
+
+    crop_size = (
+        args.crop_size
+        if args.crop_size is not None
+        else pretrain_data.get("crop_size", 96)
+    )
+    local_crop_size = (
+        args.local_crop_size
+        if args.local_crop_size is not None
+        else pretrain_data.get("local_crop_size", 64)
+    )
+    batch_size = (
+        args.batch_size
+        if args.batch_size is not None
+        else pretrain_data.get("batch_size", 16)
+    )
+    num_workers = (
+        args.num_workers
+        if args.num_workers is not None
+        else pretrain_data.get("num_workers", 4)
+    )
+
+    optim_cfg = pretrain_cfg.get("optimizer", {})
+    lr = args.lr if args.lr is not None else optim_cfg.get("lr", 1e-3)
+    weight_decay = (
+        args.weight_decay
+        if args.weight_decay is not None
+        else optim_cfg.get("weight_decay", 1e-4)
+    )
 
     if args.task == "phi_byol":
         data_cfg = BYOLDataConfig(
-            hr_dir=args.train_hr_dir,
-            batch_size=args.batch_size or 16,
-            num_workers=args.num_workers or 4,
-            crop_size=args.crop_size,
-            local_crop_size=args.local_crop_size,
+            hr_dir=train_hr_dir,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            crop_size=crop_size,
+            local_crop_size=local_crop_size,
             num_views=num_views,
             augment=augment,
             degradation=degradation,
         )
-        opt_cfg = BYOLOptimConfig(
-            lr=args.lr or 1e-3, weight_decay=args.weight_decay or 1e-4
+        opt_cfg = BYOLOptimConfig(lr=lr, weight_decay=weight_decay)
+        byol_cfg = pretrain_cfg.get("byol", {})
+        byol_momentum = (
+            args.byol_momentum
+            if args.byol_momentum is not None
+            else byol_cfg.get("momentum", 0.996)
         )
         task_cfg = BYOLTaskConfig(
             data=data_cfg,
             optimizer=opt_cfg,
-            byol_momentum=args.byol_momentum,
-            save_full=args.save_full_pretrain,
+            byol_momentum=byol_momentum,
+            save_full=args.save_full_pretrain
+            if args.save_full_pretrain is not None
+            else bool(pretrain_cfg.get("save_full_pretrain", False)),
         )
     else:
         data_cfg = DINODataConfig(
-            hr_dir=args.train_hr_dir,
-            batch_size=args.batch_size or 16,
-            num_workers=args.num_workers or 4,
-            crop_size=args.crop_size,
-            local_crop_size=args.local_crop_size,
+            hr_dir=train_hr_dir,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            crop_size=crop_size,
+            local_crop_size=local_crop_size,
             num_views=num_views,
             augment=augment,
             degradation=degradation,
         )
-        opt_cfg = DINOOptimConfig(
-            lr=args.lr or 1e-3, weight_decay=args.weight_decay or 1e-4
+        opt_cfg = DINOOptimConfig(lr=lr, weight_decay=weight_decay)
+        dino_cfg = pretrain_cfg.get("dino", {})
+        tau_s = (
+            args.dino_tau_s
+            if args.dino_tau_s is not None
+            else dino_cfg.get("tau_s", 0.1)
+        )
+        tau_t = (
+            args.dino_tau_t
+            if args.dino_tau_t is not None
+            else dino_cfg.get("tau_t", 0.04)
+        )
+        center_momentum = (
+            args.dino_center_momentum
+            if args.dino_center_momentum is not None
+            else dino_cfg.get("center_momentum", 0.9)
+        )
+        dino_k = args.dino_k if args.dino_k is not None else dino_cfg.get("k", 1024)
+        byol_cfg = pretrain_cfg.get("byol", {})
+        byol_momentum = (
+            args.byol_momentum
+            if args.byol_momentum is not None
+            else byol_cfg.get("momentum", 0.996)
         )
         task_cfg = DINOTaskConfig(
             data=data_cfg,
             optimizer=opt_cfg,
-            out_dim=args.dino_k,
-            tau_s=args.dino_tau_s,
-            tau_t=args.dino_tau_t,
-            center_momentum=args.dino_center_momentum,
-            ema_momentum=args.byol_momentum,
-            save_full=args.save_full_pretrain,
+            out_dim=dino_k,
+            tau_s=tau_s,
+            tau_t=tau_t,
+            center_momentum=center_momentum,
+            ema_momentum=byol_momentum,
+            save_full=args.save_full_pretrain
+            if args.save_full_pretrain is not None
+            else bool(pretrain_cfg.get("save_full_pretrain", False)),
         )
 
+    training_cfg = pretrain_cfg.get("training", {})
     trainer_cfg = TrainerConfig(
-        epochs=args.epochs or 200,
-        amp=bool(args.amp),
-        grad_clip_norm=args.grad_clip_norm,
-        save_every=args.save_every or 1,
-        save_dir=Path(args.save_dir or "checkpoints"),
-        log_file=Path(args.log_file) if args.log_file else None,
+        epochs=args.epochs or training_cfg.get("epochs", 200),
+        amp=args.amp if args.amp is not None else bool(training_cfg.get("amp", False)),
+        grad_clip_norm=args.grad_clip_norm
+        if args.grad_clip_norm is not None
+        else training_cfg.get("grad_clip_norm"),
+        save_every=args.save_every or training_cfg.get("save_every", 1),
+        save_dir=Path(args.save_dir or training_cfg.get("output_dir", "checkpoints")),
+        log_file=Path(args.log_file)
+        if args.log_file
+        else (
+            Path(training_cfg["log_file"])
+            if training_cfg.get("log_file")
+            else None
+        ),
         monitor="loss",
         mode="min",
     )
@@ -247,33 +356,33 @@ def parse_args() -> CLIArgs:
     parser.add_argument("--lr", type=float)
     parser.add_argument("--weight_decay", type=float)
 
-    parser.add_argument("--byol_momentum", type=float, default=0.996)
-    parser.add_argument("--dino_tau_s", type=float, default=0.1)
-    parser.add_argument("--dino_tau_t", type=float, default=0.04)
-    parser.add_argument("--dino_center_momentum", type=float, default=0.9)
-    parser.add_argument("--dino_k", type=int, default=1024)
-    parser.add_argument("--multi_crop", type=int, default=0)
+    parser.add_argument("--byol_momentum", type=float)
+    parser.add_argument("--dino_tau_s", type=float)
+    parser.add_argument("--dino_tau_t", type=float)
+    parser.add_argument("--dino_center_momentum", type=float)
+    parser.add_argument("--dino_k", type=int)
+    parser.add_argument("--multi_crop", type=int)
 
-    parser.add_argument("--crop_size", type=int, default=96)
-    parser.add_argument("--local_crop_size", type=int, default=64)
-    parser.add_argument("--max_translate", type=int, default=4)
-    parser.add_argument("--hflip_prob", type=float, default=0.5)
-    parser.add_argument("--vflip_prob", type=float, default=0.5)
-    parser.add_argument("--rotate_prob", type=float, default=0.5)
+    parser.add_argument("--crop_size", type=int)
+    parser.add_argument("--local_crop_size", type=int)
+    parser.add_argument("--max_translate", type=int)
+    parser.add_argument("--hflip_prob", type=float)
+    parser.add_argument("--vflip_prob", type=float)
+    parser.add_argument("--rotate_prob", type=float)
 
-    parser.add_argument("--blur_prob", type=float, default=0.8)
-    parser.add_argument("--blur_kernel_min", type=int, default=3)
-    parser.add_argument("--blur_kernel_max", type=int, default=7)
-    parser.add_argument("--blur_sigma_min", type=float, default=0.1)
-    parser.add_argument("--blur_sigma_max", type=float, default=2.0)
-    parser.add_argument("--downsample_scale", type=int, default=4)
-    parser.add_argument("--noise_std_min", type=float, default=0.0)
-    parser.add_argument("--noise_std_max", type=float, default=0.02)
-    parser.add_argument("--jitter_prob", type=float, default=0.8)
-    parser.add_argument("--jitter_brightness", type=float, default=0.1)
-    parser.add_argument("--jitter_contrast", type=float, default=0.1)
+    parser.add_argument("--blur_prob", type=float)
+    parser.add_argument("--blur_kernel_min", type=int)
+    parser.add_argument("--blur_kernel_max", type=int)
+    parser.add_argument("--blur_sigma_min", type=float)
+    parser.add_argument("--blur_sigma_max", type=float)
+    parser.add_argument("--downsample_scale", type=int)
+    parser.add_argument("--noise_std_min", type=float)
+    parser.add_argument("--noise_std_max", type=float)
+    parser.add_argument("--jitter_prob", type=float)
+    parser.add_argument("--jitter_brightness", type=float)
+    parser.add_argument("--jitter_contrast", type=float)
 
-    parser.add_argument("--save_full_pretrain", action="store_true")
+    parser.add_argument("--save_full_pretrain", action="store_true", default=None)
 
     args = parser.parse_args()
     if not args.freeze_phi and not args.no_freeze_phi:
