@@ -64,6 +64,7 @@ class CLIArgs:
     blur_kernel_max: int | None
     blur_sigma_min: float | None
     blur_sigma_max: float | None
+    downsample_prob: float | None
     downsample_scale: int | None
     noise_std_min: float | None
     noise_std_max: float | None
@@ -175,6 +176,9 @@ def build_pretrain_task_config(
         blur_sigma_max=args.blur_sigma_max
         if args.blur_sigma_max is not None
         else pretrain_cfg.get("degradation", {}).get("blur_sigma_max", 2.0),
+        downsample_prob=args.downsample_prob
+        if args.downsample_prob is not None
+        else pretrain_cfg.get("degradation", {}).get("downsample_prob", 0.0),
         downsample_scale=args.downsample_scale
         if args.downsample_scale is not None
         else pretrain_cfg.get("degradation", {}).get("downsample_scale", 4),
@@ -316,11 +320,7 @@ def build_pretrain_task_config(
         save_dir=Path(args.save_dir or training_cfg.get("output_dir", "checkpoints")),
         log_file=Path(args.log_file)
         if args.log_file
-        else (
-            Path(training_cfg["log_file"])
-            if training_cfg.get("log_file")
-            else None
-        ),
+        else (Path(training_cfg["log_file"]) if training_cfg.get("log_file") else None),
         monitor="loss",
         mode="min",
     )
@@ -375,6 +375,7 @@ def parse_args() -> CLIArgs:
     parser.add_argument("--blur_kernel_max", type=int)
     parser.add_argument("--blur_sigma_min", type=float)
     parser.add_argument("--blur_sigma_max", type=float)
+    parser.add_argument("--downsample_prob", type=float)
     parser.add_argument("--downsample_scale", type=int)
     parser.add_argument("--noise_std_min", type=float)
     parser.add_argument("--noise_std_max", type=float)

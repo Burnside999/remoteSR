@@ -198,6 +198,8 @@ pretrain:
     blur_sigma_min: 0.1
     # Maximum blur sigma.
     blur_sigma_max: 2.0
+    # Probability to downsample/upsample during degradation.
+    downsample_prob: 0.0
     # Downsample scale for degradation.
     downsample_scale: 4
     # Minimum noise standard deviation.
