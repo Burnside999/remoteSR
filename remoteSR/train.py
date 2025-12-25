@@ -143,10 +143,6 @@ def build_sr_task_config(args: CLIArgs) -> tuple[SRTaskConfig, TrainerConfig]:
 
     if args.freeze_phi and args.freeze_phi_epochs is None:
         freeze_phi_epochs = -1
-    if args.freeze_phi_epochs == -1 and args.no_freeze_phi:
-        freeze_phi_epochs = 0
-    if args.no_freeze_phi and args.freeze_phi_epochs is None:
-        freeze_phi_epochs = 0
 
     phi_checkpoint = args.phi_checkpoint or checkpoints_cfg.get("phi")
     g_checkpoint = args.g_checkpoint or checkpoints_cfg.get("g")
