@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 
 import torch
@@ -25,6 +26,7 @@ from remoteSR.tasks import (
     SROptimizerConfig,
     SRTaskConfig,
 )
+from remoteSR.utils import setup_logging
 
 
 @dataclass
@@ -115,6 +117,13 @@ def build_sr_task_config(args: CLIArgs) -> tuple[SRTaskConfig, TrainerConfig]:
     train_cfg = cfg["training"]
     checkpoints_cfg = train_cfg.get("checkpoints", {})
     freeze_cfg = train_cfg.get("freeze_epochs", {})
+    output_dir = Path(args.save_dir or train_cfg.get("output_dir", "checkpoints"))
+    log_file_opt = args.log_file or train_cfg.get("log_file")
+    if log_file_opt:
+        log_path = Path(log_file_opt)
+        log_file = log_path if log_path.is_absolute() else output_dir / log_path
+    else:
+        log_file = output_dir / f"log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
 
     freeze_phi_epochs = (
         args.freeze_phi_epochs
@@ -164,8 +173,8 @@ def build_sr_task_config(args: CLIArgs) -> tuple[SRTaskConfig, TrainerConfig]:
         if args.grad_clip_norm is not None
         else train_cfg.get("grad_clip_norm", 1.0),
         save_every=args.save_every or train_cfg.get("save_every", 1),
-        save_dir=Path(args.save_dir or train_cfg.get("output_dir", "checkpoints")),
-        log_file=Path(args.log_file or train_cfg.get("log_file", "log.txt")),
+        save_dir=output_dir,
+        log_file=log_file,
         monitor="loss_total",
         mode="min",
     )
@@ -351,6 +360,13 @@ def build_pretrain_task_config(
         )
 
     training_cfg = pretrain_cfg.get("training", {})
+    output_dir = Path(args.save_dir or training_cfg.get("output_dir", "checkpoints"))
+    log_file_opt = args.log_file or training_cfg.get("log_file")
+    if log_file_opt:
+        log_path = Path(log_file_opt)
+        log_file = log_path if log_path.is_absolute() else output_dir / log_path
+    else:
+        log_file = output_dir / f"log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
     trainer_cfg = TrainerConfig(
         epochs=args.epochs or training_cfg.get("epochs", 200),
         amp=args.amp if args.amp is not None else bool(training_cfg.get("amp", False)),
@@ -358,10 +374,8 @@ def build_pretrain_task_config(
         if args.grad_clip_norm is not None
         else training_cfg.get("grad_clip_norm"),
         save_every=args.save_every or training_cfg.get("save_every", 1),
-        save_dir=Path(args.save_dir or training_cfg.get("output_dir", "checkpoints")),
-        log_file=Path(args.log_file)
-        if args.log_file
-        else (Path(training_cfg["log_file"]) if training_cfg.get("log_file") else None),
+        save_dir=output_dir,
+        log_file=log_file,
         monitor="loss",
         mode="min",
     )
@@ -446,8 +460,6 @@ def run_training(args: CLIArgs) -> None:
     if args.seed is not None:
         set_seed(args.seed)
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     if args.task == "sr_gan":
         task_cfg, trainer_cfg = build_sr_task_config(args)
         task = SRGanTask(task_cfg)
@@ -457,6 +469,78 @@ def run_training(args: CLIArgs) -> None:
     else:
         task_cfg, trainer_cfg = build_pretrain_task_config(args)
         task = PhiDINOTask(task_cfg)
+
+    logger = setup_logging(trainer_cfg.log_file)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    logger.info(
+        "Starting task=%s | device=%s | amp=%s | epochs=%d | save_every=%d | log_file=%s",
+        args.task,
+        device,
+        trainer_cfg.amp,
+        trainer_cfg.epochs,
+        trainer_cfg.save_every,
+        trainer_cfg.log_file,
+    )
+    if args.task == "sr_gan":
+        logger.info(
+            "SR data: lr_dir=%s hr_dir=%s batch_size=%s num_workers=%s eval_enabled=%s",
+            task_cfg.data.train_lr_dir,
+            task_cfg.data.train_hr_dir,
+            task_cfg.data.batch_size,
+            task_cfg.data.num_workers,
+            task_cfg.data.eval_enabled,
+        )
+        logger.info(
+            "Checkpoints: G=%s D=%s phi=%s (pretrained=%s)",
+            task_cfg.checkpoint_g,
+            task_cfg.checkpoint_d,
+            task_cfg.checkpoint_phi,
+            task_cfg.phi_pretrained,
+        )
+        logger.info(
+            "Freeze schedule (epochs): G=%d D=%d phi=%d (-1 means permanent)",
+            task_cfg.freeze_g_epochs,
+            task_cfg.freeze_d_epochs,
+            task_cfg.freeze_phi_epochs,
+        )
+        logger.info(
+            "Optim LR: G=%.6f D=%.6f phi=%.6f weight_decay=%.6f",
+            task_cfg.optimizer.lr_g,
+            task_cfg.optimizer.lr_d,
+            task_cfg.optimizer.lr_phi,
+            task_cfg.optimizer.weight_decay,
+        )
+    else:
+        data_cfg = task_cfg.data
+        logger.info(
+            "Pretrain data: hr_dir=%s batch_size=%s num_workers=%s crop_size=%s local_crop_size=%s views=%s",
+            data_cfg.hr_dir,
+            data_cfg.batch_size,
+            data_cfg.num_workers,
+            data_cfg.crop_size,
+            data_cfg.local_crop_size,
+            data_cfg.num_views,
+        )
+        logger.info(
+            "Augment: max_translate=%s hflip=%.2f vflip=%.2f rotate=%.2f",
+            data_cfg.augment.max_translate,
+            data_cfg.augment.hflip_prob,
+            data_cfg.augment.vflip_prob,
+            data_cfg.augment.rotate_prob,
+        )
+        logger.info(
+            "Degradation: blur_prob=%.2f kernel=[%d,%d] sigma=[%.2f,%.2f] downsample_prob=%.2f scale=%d noise=[%.4f,%.4f] jitter_prob=%.2f",
+            data_cfg.degradation.blur_prob,
+            data_cfg.degradation.blur_kernel_min,
+            data_cfg.degradation.blur_kernel_max,
+            data_cfg.degradation.blur_sigma_min,
+            data_cfg.degradation.blur_sigma_max,
+            data_cfg.degradation.downsample_prob,
+            data_cfg.degradation.downsample_scale,
+            data_cfg.degradation.noise_std_min,
+            data_cfg.degradation.noise_std_max,
+            data_cfg.degradation.jitter_prob,
+        )
 
     trainer = Trainer(
         task=task,

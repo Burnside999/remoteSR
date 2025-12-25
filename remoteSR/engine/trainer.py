@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -40,6 +41,7 @@ class Trainer:
         self.config = config
         self.device = device
         self.resume = resume
+        self.logger = logging.getLogger("remoteSR")
         self.scaler = (
             torch.amp.GradScaler("cuda")
             if config.amp and torch.cuda.is_available()
@@ -54,11 +56,7 @@ class Trainer:
         message = f"[{prefix}] epoch={epoch} " + ", ".join(
             f"{k}={v:.6f}" for k, v in metrics.items()
         )
-        print(message)
-        if self.config.log_file is not None:
-            self.config.log_file.parent.mkdir(parents=True, exist_ok=True)
-            with self.config.log_file.open("a", encoding="utf-8") as f:
-                f.write(message + "\n")
+        self.logger.info(message)
 
     def _run_epoch(
         self,
@@ -148,6 +146,12 @@ class Trainer:
             is_best=improved,
             routine_save=routine_save,
         )
+        self.logger.info(
+            "Checkpoint saved at epoch %d (best=%s, routine=%s)",
+            epoch,
+            improved,
+            routine_save,
+        )
 
     def load_ckpt(self, path: Path) -> int:
         ckpt = torch.load(path, map_location=self.device)
@@ -160,7 +164,9 @@ class Trainer:
         if self.scaler is not None and ckpt.get("scaler") is not None:
             self.scaler.load_state_dict(ckpt["scaler"])
         self.task.load_state_dict(ckpt.get("task_state", {}))
-        return int(ckpt.get("epoch", 0))
+        epoch = int(ckpt.get("epoch", 0))
+        self.logger.info("Loaded checkpoint from %s (epoch=%d)", path, epoch)
+        return epoch
 
     def fit(self) -> None:
         train_loader, val_loader = self.build_dataloader()
@@ -170,12 +176,22 @@ class Trainer:
         start_epoch = 1
         if self.resume is not None and self.resume.is_file():
             start_epoch = self.load_ckpt(self.resume) + 1
+            self.logger.info(
+                "Resumed from %s (start_epoch=%d)", self.resume, start_epoch
+            )
+        else:
+            self.logger.info("Fresh training run")
 
         for epoch in range(start_epoch, self.config.epochs + 1):
             self.task.on_epoch_start(
                 epoch=epoch,
                 models=self.models,
                 optimizers=self.optimizers,
+            )
+            self.logger.info(
+                "Epoch %d/%d - training",
+                epoch,
+                self.config.epochs,
             )
             train_metrics = self._run_epoch(epoch, train_loader, train=True)
             self.log_metrics(epoch, train_metrics, prefix="train")

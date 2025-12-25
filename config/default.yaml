@@ -79,6 +79,8 @@ training:
   save_every: 10
   # Output directory for SR GAN checkpoints.
   output_dir: checkpoints
+  # Log file path (default: output_dir/log_{timestamp}.txt when null).
+  log_file: null
   checkpoints:
     # Optional warm-start checkpoints for individual components.
     phi: null

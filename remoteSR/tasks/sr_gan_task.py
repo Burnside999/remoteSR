@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -72,17 +73,18 @@ class SRGanTask(Task):
         self.config = config
         self.criterion: SemiSRLoss | None = None
         self.frozen: dict[str, bool] = {"phi": False, "g": False, "d": False}
+        self.logger = logging.getLogger("remoteSR")
 
     def build_models(self, device: torch.device) -> dict[str, nn.Module]:
         model = SemiSupervisedSRModel(self.config.model).to(device)
 
-        self._maybe_load_component(
+        g_loaded = self._maybe_load_component(
             module=model.G,
             path=self.config.checkpoint_g,
             name="G",
             device=device,
         )
-        self._maybe_load_component(
+        d_loaded = self._maybe_load_component(
             module=model.D,
             path=self.config.checkpoint_d,
             name="D",
@@ -95,12 +97,18 @@ class SRGanTask(Task):
             device=device,
         )
         if not phi_loaded and self.config.phi_pretrained:
-            self._maybe_load_component(
+            phi_loaded = self._maybe_load_component(
                 module=model.phi,
                 path=self.config.phi_pretrained,
                 name="phi",
                 device=device,
             )
+        self.logger.info(
+            "Model init: G=%s D=%s phi=%s",
+            "loaded" if g_loaded else "random",
+            "loaded" if d_loaded else "random",
+            "loaded" if phi_loaded else "random",
+        )
 
         weights = LossWeights(
             lambda_lr=self.config.loss.lambda_lr,
@@ -283,6 +291,13 @@ class SRGanTask(Task):
             model.D.eval()
         if self.frozen["phi"]:
             model.phi.eval()
+        self.logger.info(
+            "Epoch %d freeze status: G_frozen=%s D_frozen=%s phi_frozen=%s",
+            epoch,
+            self.frozen["g"],
+            self.frozen["d"],
+            self.frozen["phi"],
+        )
 
     def save_component_checkpoints(
         self,
@@ -337,8 +352,8 @@ class SRGanTask(Task):
             else:
                 model.phi.train()
 
-    @staticmethod
     def _maybe_load_component(
+        self,
         module: nn.Module,
         path: str | None,
         name: str,
@@ -348,7 +363,7 @@ class SRGanTask(Task):
             return False
         ckpt_path = Path(path)
         if not ckpt_path.is_file():
-            print(f"{name} checkpoint not found: {ckpt_path}")
+            self.logger.warning("%s checkpoint not found: %s", name, ckpt_path)
             return False
 
         state = torch.load(ckpt_path, map_location=device)
@@ -373,10 +388,10 @@ class SRGanTask(Task):
                 state = state[name]
         try:
             module.load_state_dict(state, strict=False)
-            print(f"Loaded {name} weights from {ckpt_path}")
+            self.logger.info("Loaded %s weights from %s", name, ckpt_path)
             return True
         except Exception as exc:  # pragma: no cover - defensive
-            print(f"Failed to load {name} from {ckpt_path}: {exc}")
+            self.logger.error("Failed to load %s from %s: %s", name, ckpt_path, exc)
             return False
 
     @staticmethod
