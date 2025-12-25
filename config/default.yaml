@@ -79,6 +79,18 @@ training:
   save_every: 10
   # Output directory for SR GAN checkpoints.
   output_dir: checkpoints
+  checkpoints:
+    # Optional warm-start checkpoints for individual components.
+    phi: null
+    g: null
+    d: null
+  freeze_epochs:
+    # Freeze phi for the first N epochs (-1 to freeze permanently).
+    phi: 0
+    # Freeze G for the first N epochs (-1 to freeze permanently).
+    g: 0
+    # Freeze D for the first N epochs (-1 to freeze permanently).
+    d: 0
   onnx_export:
     # Export ONNX after training.
     enabled: false

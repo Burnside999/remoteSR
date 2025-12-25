@@ -77,3 +77,29 @@ class Task(ABC):
     def on_train_end(self, models: dict[str, nn.Module], save_dir: Path) -> None:
         _ = models
         _ = save_dir
+
+    def on_epoch_start(
+        self,
+        epoch: int,
+        models: dict[str, nn.Module],
+        optimizers: dict[str, torch.optim.Optimizer],
+    ) -> None:
+        _ = epoch
+        _ = models
+        _ = optimizers
+
+    def save_component_checkpoints(
+        self,
+        save_dir: Path,
+        epoch: int,
+        models: dict[str, nn.Module],
+        optimizers: dict[str, torch.optim.Optimizer],
+        is_best: bool,
+        routine_save: bool,
+    ) -> None:
+        _ = save_dir
+        _ = epoch
+        _ = models
+        _ = optimizers
+        _ = is_best
+        _ = routine_save

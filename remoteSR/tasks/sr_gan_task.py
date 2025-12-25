@@ -9,7 +9,6 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from remoteSR.data import EvalLRDataset, SRDataset
-from remoteSR.engine.optim import build_optimizer
 from remoteSR.models import LossWeights, SemiSRConfig, SemiSRLoss, SemiSupervisedSRModel
 from remoteSR.tasks.base import Task
 
@@ -58,7 +57,12 @@ class SRTaskConfig:
     loss: SRLossConfig
     data: SRDataConfig
     phi_pretrained: str | None = None
-    freeze_phi: bool = True
+    checkpoint_phi: str | None = None
+    checkpoint_g: str | None = None
+    checkpoint_d: str | None = None
+    freeze_phi_epochs: int = 0
+    freeze_g_epochs: int = 0
+    freeze_d_epochs: int = 0
 
 
 class SRGanTask(Task):
@@ -67,24 +71,36 @@ class SRGanTask(Task):
     def __init__(self, config: SRTaskConfig) -> None:
         self.config = config
         self.criterion: SemiSRLoss | None = None
+        self.frozen: dict[str, bool] = {"phi": False, "g": False, "d": False}
 
     def build_models(self, device: torch.device) -> dict[str, nn.Module]:
         model = SemiSupervisedSRModel(self.config.model).to(device)
 
-        if self.config.phi_pretrained:
-            phi_path = Path(self.config.phi_pretrained)
-            if phi_path.is_file():
-                state = torch.load(phi_path, map_location=device)
-                phi_state = state.get("phi") if isinstance(state, dict) else state
-                model.phi.load_state_dict(phi_state, strict=True)
-                print(f"Loaded phi backbone from {phi_path}")
-            else:
-                print(f"Phi checkpoint not found: {phi_path}")
-
-        if self.config.freeze_phi:
-            for param in model.phi.parameters():
-                param.requires_grad = False
-            model.phi.eval()
+        self._maybe_load_component(
+            module=model.G,
+            path=self.config.checkpoint_g,
+            name="G",
+            device=device,
+        )
+        self._maybe_load_component(
+            module=model.D,
+            path=self.config.checkpoint_d,
+            name="D",
+            device=device,
+        )
+        phi_loaded = self._maybe_load_component(
+            module=model.phi,
+            path=self.config.checkpoint_phi,
+            name="phi",
+            device=device,
+        )
+        if not phi_loaded and self.config.phi_pretrained:
+            self._maybe_load_component(
+                module=model.phi,
+                path=self.config.phi_pretrained,
+                name="phi",
+                device=device,
+            )
 
         weights = LossWeights(
             lambda_lr=self.config.loss.lambda_lr,
@@ -112,22 +128,20 @@ class SRGanTask(Task):
     ) -> dict[str, torch.optim.Optimizer]:
         model = models["sr_model"]
         opt_cfg = self.config.optimizer
-        if self.config.freeze_phi:
-            params = [
-                {"params": model.G.parameters(), "lr": opt_cfg.lr_g},
-                {"params": model.D.parameters(), "lr": opt_cfg.lr_d},
-            ]
-            optimizer = torch.optim.AdamW(
-                params, betas=(0.9, 0.99), weight_decay=opt_cfg.weight_decay
-            )
-        else:
-            optimizer = build_optimizer(
-                model,
-                lr_g=opt_cfg.lr_g,
-                lr_d=opt_cfg.lr_d,
-                lr_phi=opt_cfg.lr_phi,
-                weight_decay=opt_cfg.weight_decay,
-            )
+        params = []
+        if self.config.freeze_g_epochs != -1:
+            params.append({"params": model.G.parameters(), "lr": opt_cfg.lr_g})
+        if self.config.freeze_d_epochs != -1:
+            params.append({"params": model.D.parameters(), "lr": opt_cfg.lr_d})
+        if self.config.freeze_phi_epochs != -1:
+            params.append({"params": model.phi.parameters(), "lr": opt_cfg.lr_phi})
+
+        if not params:
+            raise ValueError("All model components are frozen; nothing to optimize.")
+
+        optimizer = torch.optim.AdamW(
+            params, betas=(0.9, 0.99), weight_decay=opt_cfg.weight_decay
+        )
         return {"optimizer": optimizer}
 
     def build_dataloaders(self) -> tuple[DataLoader, DataLoader | None]:
@@ -171,6 +185,7 @@ class SRGanTask(Task):
         assert criterion is not None
 
         model.train()
+        self._apply_train_modes(model)
         batch = self._move_to_device(batch, device)
 
         y_lr = batch["y_lr"]
@@ -236,8 +251,133 @@ class SRGanTask(Task):
             "loss": asdict(self.config.loss),
             "data": asdict(self.config.data),
             "phi_pretrained": self.config.phi_pretrained,
-            "freeze_phi": self.config.freeze_phi,
+            "checkpoint_phi": self.config.checkpoint_phi,
+            "checkpoint_g": self.config.checkpoint_g,
+            "checkpoint_d": self.config.checkpoint_d,
+            "freeze_phi_epochs": self.config.freeze_phi_epochs,
+            "freeze_g_epochs": self.config.freeze_g_epochs,
+            "freeze_d_epochs": self.config.freeze_d_epochs,
         }
+
+    def on_epoch_start(
+        self,
+        epoch: int,
+        models: dict[str, nn.Module],
+        optimizers: dict[str, torch.optim.Optimizer],
+    ) -> None:
+        _ = optimizers  # optimizer behavior is gated by requires_grad
+        model = models["sr_model"]
+
+        self.frozen["g"] = self._should_freeze(self.config.freeze_g_epochs, epoch)
+        self.frozen["d"] = self._should_freeze(self.config.freeze_d_epochs, epoch)
+        self.frozen["phi"] = self._should_freeze(self.config.freeze_phi_epochs, epoch)
+
+        self._set_requires_grad(model.G, not self.frozen["g"])
+        self._set_requires_grad(model.D, not self.frozen["d"])
+        self._set_requires_grad(model.phi, not self.frozen["phi"])
+
+        # Keep frozen modules in eval mode to avoid BN stat updates.
+        if self.frozen["g"]:
+            model.G.eval()
+        if self.frozen["d"]:
+            model.D.eval()
+        if self.frozen["phi"]:
+            model.phi.eval()
+
+    def save_component_checkpoints(
+        self,
+        save_dir: Path,
+        epoch: int,
+        models: dict[str, nn.Module],
+        optimizers: dict[str, torch.optim.Optimizer],
+        is_best: bool,
+        routine_save: bool,
+    ) -> None:
+        _ = optimizers  # optimizer state is stored in the aggregated checkpoint
+        model = models.get("sr_model")
+        if model is None:
+            return
+
+        components = {"G": model.G, "D": model.D, "phi": model.phi}
+        save_dir.mkdir(parents=True, exist_ok=True)
+
+        for name, module in components.items():
+            payload = {"epoch": epoch, "state_dict": module.state_dict()}
+            torch.save(payload, save_dir / f"{name.lower()}_latest.pth")
+            if routine_save:
+                torch.save(payload, save_dir / f"{name.lower()}_epoch_{epoch:04d}.pth")
+            if is_best:
+                torch.save(payload, save_dir / f"{name.lower()}_best.pth")
+
+    @staticmethod
+    def _should_freeze(freeze_epochs: int, epoch: int) -> bool:
+        if freeze_epochs == -1:
+            return True
+        return epoch <= freeze_epochs
+
+    @staticmethod
+    def _set_requires_grad(module: nn.Module, enabled: bool) -> None:
+        for param in module.parameters():
+            param.requires_grad = enabled
+
+    def _apply_train_modes(self, model: SemiSupervisedSRModel) -> None:
+        if hasattr(model, "G"):
+            if self.frozen.get("g", False):
+                model.G.eval()
+            else:
+                model.G.train()
+        if hasattr(model, "D"):
+            if self.frozen.get("d", False):
+                model.D.eval()
+            else:
+                model.D.train()
+        if hasattr(model, "phi"):
+            if self.frozen.get("phi", False):
+                model.phi.eval()
+            else:
+                model.phi.train()
+
+    @staticmethod
+    def _maybe_load_component(
+        module: nn.Module,
+        path: str | None,
+        name: str,
+        device: torch.device,
+    ) -> bool:
+        if not path:
+            return False
+        ckpt_path = Path(path)
+        if not ckpt_path.is_file():
+            print(f"{name} checkpoint not found: {ckpt_path}")
+            return False
+
+        state = torch.load(ckpt_path, map_location=device)
+        if isinstance(state, dict):
+            if "state_dict" in state:
+                state = state["state_dict"]
+            elif "models" in state and isinstance(state["models"], dict):
+                models_dict = state["models"]
+                if name in models_dict and isinstance(models_dict[name], dict):
+                    state = models_dict[name]
+                elif "sr_model" in models_dict and isinstance(
+                    models_dict["sr_model"], dict
+                ):
+                    sr_state = models_dict["sr_model"]
+                    filtered = {
+                        key.split(f"{name}.", 1)[1]: value
+                        for key, value in sr_state.items()
+                        if key.startswith(f"{name}.")
+                    }
+                    state = filtered or sr_state
+            elif name in state and isinstance(state[name], dict):
+                state = state[name]
+        try:
+            module.load_state_dict(state, strict=False)
+            print(f"Loaded {name} weights from {ckpt_path}")
+            return True
+        except Exception as exc:  # pragma: no cover - defensive
+            print(f"Failed to load {name} from {ckpt_path}: {exc}")
+            return False
 
     @staticmethod
     def _move_to_device(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:

@@ -45,6 +45,12 @@ class CLIArgs:
     train_hr_dir: str | None
     phi_pretrained: str | None
     freeze_phi: bool
+    phi_checkpoint: str | None
+    g_checkpoint: str | None
+    d_checkpoint: str | None
+    freeze_phi_epochs: int | None
+    freeze_g_epochs: int | None
+    freeze_d_epochs: int | None
     lr: float | None
     weight_decay: float | None
     byol_momentum: float | None
@@ -106,16 +112,51 @@ def build_sr_task_config(args: CLIArgs) -> tuple[SRTaskConfig, TrainerConfig]:
         eval_num_workers=cfg.get("evaluation", {}).get("num_workers"),
     )
 
+    train_cfg = cfg["training"]
+    checkpoints_cfg = train_cfg.get("checkpoints", {})
+    freeze_cfg = train_cfg.get("freeze_epochs", {})
+
+    freeze_phi_epochs = (
+        args.freeze_phi_epochs
+        if args.freeze_phi_epochs is not None
+        else freeze_cfg.get("phi", 0)
+    )
+    freeze_g_epochs = (
+        args.freeze_g_epochs
+        if args.freeze_g_epochs is not None
+        else freeze_cfg.get("g", 0)
+    )
+    freeze_d_epochs = (
+        args.freeze_d_epochs
+        if args.freeze_d_epochs is not None
+        else freeze_cfg.get("d", 0)
+    )
+
+    if args.freeze_phi and args.freeze_phi_epochs is None:
+        freeze_phi_epochs = -1
+    if args.freeze_phi_epochs == -1 and args.no_freeze_phi:
+        freeze_phi_epochs = 0
+    if args.no_freeze_phi and args.freeze_phi_epochs is None:
+        freeze_phi_epochs = 0
+
+    phi_checkpoint = args.phi_checkpoint or checkpoints_cfg.get("phi")
+    g_checkpoint = args.g_checkpoint or checkpoints_cfg.get("g")
+    d_checkpoint = args.d_checkpoint or checkpoints_cfg.get("d")
+
     task_cfg = SRTaskConfig(
         model=model_cfg,
         optimizer=optim_cfg,
         loss=loss_cfg,
         data=data_cfg,
         phi_pretrained=args.phi_pretrained,
-        freeze_phi=args.freeze_phi,
+        checkpoint_phi=phi_checkpoint,
+        checkpoint_g=g_checkpoint,
+        checkpoint_d=d_checkpoint,
+        freeze_phi_epochs=int(freeze_phi_epochs),
+        freeze_g_epochs=int(freeze_g_epochs),
+        freeze_d_epochs=int(freeze_d_epochs),
     )
 
-    train_cfg = cfg["training"]
     trainer_cfg = TrainerConfig(
         epochs=args.epochs or train_cfg["epochs"],
         amp=args.amp if args.amp is not None else bool(train_cfg.get("amp", False)),
@@ -352,6 +393,12 @@ def parse_args() -> CLIArgs:
     parser.add_argument("--phi_pretrained")
     parser.add_argument("--freeze_phi", action="store_true")
     parser.add_argument("--no_freeze_phi", action="store_true")
+    parser.add_argument("--phi_checkpoint")
+    parser.add_argument("--g_checkpoint")
+    parser.add_argument("--d_checkpoint")
+    parser.add_argument("--freeze_phi_epochs", type=int)
+    parser.add_argument("--freeze_g_epochs", type=int)
+    parser.add_argument("--freeze_d_epochs", type=int)
 
     parser.add_argument("--lr", type=float)
     parser.add_argument("--weight_decay", type=float)
@@ -386,10 +433,10 @@ def parse_args() -> CLIArgs:
     parser.add_argument("--save_full_pretrain", action="store_true", default=None)
 
     args = parser.parse_args()
-    if not args.freeze_phi and not args.no_freeze_phi:
-        args.freeze_phi = True
-    else:
-        args.freeze_phi = bool(args.freeze_phi) and not bool(args.no_freeze_phi)
+    if args.freeze_phi and args.freeze_phi_epochs is None:
+        args.freeze_phi_epochs = -1
+    if args.no_freeze_phi:
+        args.freeze_phi_epochs = 0
     arg_dict = vars(args)
     arg_dict.pop("no_freeze_phi", None)
     return CLIArgs(**arg_dict)

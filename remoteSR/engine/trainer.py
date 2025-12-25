@@ -118,27 +118,36 @@ class Trainer:
         }
         torch.save(ckpt, self.config.save_dir / "latest.pth")
 
+        improved = False
         metric_source = val_metrics if val_metrics else train_metrics
         metric_key = self.task.metric_key
         metric_value = metric_source.get(metric_key)
-        if metric_value is None:
-            return
-        if self.best_metric is None:
-            improved = True
-        else:
-            improved = (
-                metric_value < self.best_metric
-                if self.config.mode == "min"
-                else metric_value > self.best_metric
-            )
-        if improved:
-            self.best_metric = metric_value
-            torch.save(ckpt, self.config.save_dir / "best.pth")
-        if routine_save:
-            torch.save(
-                ckpt,
-                self.config.save_dir / f"epoch_{epoch:04d}.pth",
-            )
+        if metric_value is not None:
+            if self.best_metric is None:
+                improved = True
+            else:
+                improved = (
+                    metric_value < self.best_metric
+                    if self.config.mode == "min"
+                    else metric_value > self.best_metric
+                )
+            if improved:
+                self.best_metric = metric_value
+                torch.save(ckpt, self.config.save_dir / "best.pth")
+            if routine_save:
+                torch.save(
+                    ckpt,
+                    self.config.save_dir / f"epoch_{epoch:04d}.pth",
+                )
+
+        self.task.save_component_checkpoints(
+            save_dir=self.config.save_dir,
+            epoch=epoch,
+            models=self.models,
+            optimizers=self.optimizers,
+            is_best=improved,
+            routine_save=routine_save,
+        )
 
     def load_ckpt(self, path: Path) -> int:
         ckpt = torch.load(path, map_location=self.device)
@@ -163,6 +172,11 @@ class Trainer:
             start_epoch = self.load_ckpt(self.resume) + 1
 
         for epoch in range(start_epoch, self.config.epochs + 1):
+            self.task.on_epoch_start(
+                epoch=epoch,
+                models=self.models,
+                optimizers=self.optimizers,
+            )
             train_metrics = self._run_epoch(epoch, train_loader, train=True)
             self.log_metrics(epoch, train_metrics, prefix="train")
 
