@@ -402,7 +402,6 @@ def parse_args() -> CLIArgs:
     parser.add_argument("--train_hr_dir")
     parser.add_argument("--phi_pretrained")
     parser.add_argument("--freeze_phi", action="store_true")
-    parser.add_argument("--no_freeze_phi", action="store_true")
     parser.add_argument("--phi_checkpoint")
     parser.add_argument("--g_checkpoint")
     parser.add_argument("--d_checkpoint")
@@ -445,11 +444,7 @@ def parse_args() -> CLIArgs:
     args = parser.parse_args()
     if args.freeze_phi and args.freeze_phi_epochs is None:
         args.freeze_phi_epochs = -1
-    if args.no_freeze_phi:
-        args.freeze_phi_epochs = 0
-    arg_dict = vars(args)
-    arg_dict.pop("no_freeze_phi", None)
-    return CLIArgs(**arg_dict)
+    return CLIArgs(**vars(args))
 
 
 def run_training(args: CLIArgs) -> None:
