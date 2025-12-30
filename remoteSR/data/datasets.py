@@ -93,3 +93,44 @@ class EvalLRDataset(Dataset):
         lr_img = cv2.imread(lr_path, cv2.IMREAD_UNCHANGED)
         lr_img = torch.from_numpy(lr_img).permute(2, 0, 1).float() / 255.0
         return {"y_lr": lr_img, "filename": os.path.basename(lr_path)}
+
+
+class CycleGANDataset(Dataset):
+    """
+    Unpaired dataset for CycleGAN. Samples from domain A and B independently.
+    """
+
+    def __init__(
+        self, domain_a_dir: str, domain_b_dir: str, normalize_tanh: bool = True
+    ):
+        self.domain_a_dir = domain_a_dir
+        self.domain_b_dir = domain_b_dir
+        self.normalize_tanh = normalize_tanh
+        self.a_files = os.listdir(domain_a_dir)
+        self.b_files = os.listdir(domain_b_dir)
+        if not self.a_files or not self.b_files:
+            raise ValueError("Domain A/B directories must not be empty.")
+        assert len(self.a_files) == len(self.b_files), (
+            "Domain A and B directories must have the same number of files."
+        )
+
+    def __len__(self) -> int:
+        return max(len(self.a_files), len(self.b_files))
+
+    def _read_image(self, path: str) -> torch.Tensor:
+        img = cv2.imread(path, cv2.IMREAD_UNCHANGED)
+        if img is None:
+            raise FileNotFoundError(f"Failed to read image: {path}")
+        if img.ndim == 2:
+            img = img[:, :, None]
+        tensor = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
+        if self.normalize_tanh:
+            tensor = tensor * 2.0 - 1.0
+        return tensor
+
+    def __getitem__(self, idx: int) -> dict[str, torch.Tensor]:
+        a_path = os.path.join(self.domain_a_dir, self.a_files[idx])
+        b_path = os.path.join(self.domain_b_dir, self.b_files[idx])
+        real_a = self._read_image(a_path)
+        real_b = self._read_image(b_path)
+        return {"real_A": real_a, "real_B": real_b}
