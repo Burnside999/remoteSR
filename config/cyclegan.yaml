@@ -1,12 +1,20 @@
 model:
   # Input/output channel count.
   in_channels: 3
-  # Base feature width for generators/discriminators.
+  # Base feature width for generator/discriminator.
   base_channels: 64
-  # Number of ResNet blocks in the generator bottleneck.
-  num_res_blocks: 6
-  # Enable dropout in ResNet blocks.
-  use_dropout: false
+  # RCAB residual groups (from SR GAN generator).
+  num_groups: 6
+  # RCAB blocks per group.
+  blocks_per_group: 12
+  # Channel attention reduction.
+  ca_reduction: 16
+  # Residual scaling inside each group.
+  res_scale: 0.1
+  # Upscale factor for the RCAN-style generator (1 keeps resolution).
+  scale: 4
+  # Keep generator output in [-1, 1] to match normalized inputs.
+  use_tanh: true
 
 data:
   # Domain A training directory.

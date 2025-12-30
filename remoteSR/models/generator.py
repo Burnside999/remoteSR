@@ -51,8 +51,13 @@ class RCAB(nn.Module):
 class ResizeConvUpsampler(nn.Module):
     def __init__(self, channels: int, scale: int = 4, act=None):
         super().__init__()
-        assert scale in (2, 4, 8)
         act = act if act is not None else nn.ReLU(inplace=True)
+
+        if scale == 1:
+            self.net = nn.Identity()
+            return
+        if scale not in (2, 4, 8):
+            raise ValueError("ResizeConvUpsampler only supports scale in {1, 2, 4, 8}")
 
         layers = []
         s = scale
@@ -98,7 +103,7 @@ class RCANSRGenerator(nn.Module):
     - Head conv
     - N RCAB blocks
     - Global residual
-    - ResizeConv upsampler (x4)
+    - ResizeConv upsampler (configurable; acts as identity when scale=1)
     - Tail conv
 
     You can optionally return intermediate features for distillation.
@@ -117,7 +122,8 @@ class RCANSRGenerator(nn.Module):
         act: nn.Module | None = None,
     ):
         super().__init__()
-        assert scale == 4, "This implementation is configured for x4 as you requested."
+        if scale not in (1, 2, 4, 8):
+            raise ValueError("RCANSRGenerator only supports scale in {1, 2, 4, 8}.")
         act = act if act is not None else _default_act()
 
         self.lr_channels = lr_channels
