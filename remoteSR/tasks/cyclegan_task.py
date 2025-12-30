@@ -26,6 +26,11 @@ class CycleGANDataConfig:
     batch_size: int = 1
     num_workers: int = 4
     normalize_tanh: bool = True
+    eval_enabled: bool = False
+    eval_domain_a_dir: str | None = None
+    eval_domain_b_dir: str | None = None
+    eval_batch_size: int | None = None
+    eval_num_workers: int | None = None
 
 
 @dataclass
@@ -121,7 +126,25 @@ class CycleGANTask(Task):
             num_workers=data_cfg.num_workers,
             pin_memory=torch.cuda.is_available(),
         )
-        return train_loader, None
+
+        val_loader = None
+        if (
+            data_cfg.eval_enabled
+            and data_cfg.eval_domain_a_dir
+            and data_cfg.eval_domain_b_dir
+        ):
+            val_loader = DataLoader(
+                CycleGANDataset(
+                    domain_a_dir=data_cfg.eval_domain_a_dir,
+                    domain_b_dir=data_cfg.eval_domain_b_dir,
+                    normalize_tanh=data_cfg.normalize_tanh,
+                ),
+                batch_size=data_cfg.eval_batch_size or data_cfg.batch_size,
+                shuffle=False,
+                num_workers=data_cfg.eval_num_workers or data_cfg.num_workers,
+                pin_memory=torch.cuda.is_available(),
+            )
+        return train_loader, val_loader
 
     def train_step(
         self,
@@ -252,6 +275,71 @@ class CycleGANTask(Task):
 
         logs = {**logs_g, **logs_d}
         return {k: float(v.item()) for k, v in logs.items()}
+
+    @torch.no_grad()
+    def val_step(
+        self,
+        batch: dict[str, Any],
+        models: dict[str, nn.Module],
+        device: torch.device,
+    ) -> dict[str, float]:
+        g_ab = models["G_AB"]
+        g_ba = models["G_BA"]
+        d_a = models["D_A"]
+        d_b = models["D_B"]
+
+        g_ab.eval()
+        g_ba.eval()
+        d_a.eval()
+        d_b.eval()
+
+        batch = self._move_to_device(batch, device)
+        real_a = batch["real_A"]
+        real_b = batch["real_B"]
+
+        fake_b = g_ab(real_a)
+        rec_a = g_ba(fake_b)
+        fake_a = g_ba(real_b)
+        rec_b = g_ab(fake_a)
+
+        loss_gan_ab = self.criterion_gan(d_b(fake_b), True)
+        loss_gan_ba = self.criterion_gan(d_a(fake_a), True)
+        loss_cycle = F.l1_loss(rec_a, real_a) + F.l1_loss(rec_b, real_b)
+
+        loss_id = fake_b.new_tensor(0.0)
+        if self.config.loss.use_identity and self.config.loss.lambda_id > 0:
+            idt_a = g_ba(real_a)
+            idt_b = g_ab(real_b)
+            loss_id = F.l1_loss(idt_a, real_a) + F.l1_loss(idt_b, real_b)
+
+        loss_g = (
+            loss_gan_ab
+            + loss_gan_ba
+            + self.config.loss.lambda_cycle * loss_cycle
+            + self.config.loss.lambda_id * loss_id
+        )
+
+        loss_d_a = 0.5 * (
+            self.criterion_gan(d_a(real_a), True)
+            + self.criterion_gan(d_a(fake_a), False)
+        )
+        loss_d_b = 0.5 * (
+            self.criterion_gan(d_b(real_b), True)
+            + self.criterion_gan(d_b(fake_b), False)
+        )
+        loss_d = loss_d_a + loss_d_b
+
+        logs = {
+            "loss_g": float(loss_g.item()),
+            "loss_d": float(loss_d.item()),
+            "loss_gan_ab": float(loss_gan_ab.item()),
+            "loss_gan_ba": float(loss_gan_ba.item()),
+            "loss_cycle": float(loss_cycle.item()),
+            "loss_id": float(loss_id.item()),
+            "loss_d_a": float(loss_d_a.item()),
+            "loss_d_b": float(loss_d_b.item()),
+        }
+        return logs
 
     def config_dict(self) -> dict[str, Any]:
         return {

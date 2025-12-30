@@ -20,6 +20,18 @@ data:
   # Normalize images to [-1, 1] for tanh outputs.
   normalize_tanh: true
 
+evaluation:
+  # Run evaluation during training.
+  enabled: false
+  # Domain A evaluation directory.
+  domain_a_dir: dataset/domainA_val
+  # Domain B evaluation directory.
+  domain_b_dir: dataset/domainB_val
+  # Evaluation batch size.
+  batch_size: 1
+  # Evaluation DataLoader worker count.
+  num_workers: 4
+
 optimizer:
   # Generator learning rate.
   lr_g: 0.0002

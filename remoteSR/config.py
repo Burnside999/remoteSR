@@ -58,13 +58,17 @@ def _normalize_config_paths(
 
 def load_config(
     path: str | Path | list[str | Path] | tuple[str | Path, ...] | None = None,
+    default_path: Path | None = None,
 ) -> dict[str, Any]:
     """
     Load one or more config files and merge them with the defaults.
     """
-    merged = _load_raw_config(DEFAULT_CONFIG_PATH)
+    base_path = default_path or DEFAULT_CONFIG_PATH
+    merged = _load_raw_config(base_path)
+    if path is None:
+        return merged
     for cfg_path in _normalize_config_paths(path):
-        if cfg_path == DEFAULT_CONFIG_PATH:
+        if cfg_path.resolve() == base_path.resolve():
             continue
         raw = _load_raw_config(cfg_path)
         merged = _deep_merge(merged, raw)

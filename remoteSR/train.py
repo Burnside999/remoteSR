@@ -396,7 +396,10 @@ def build_pretrain_task_config(
 def build_cyclegan_task_config(
     args: CLIArgs,
 ) -> tuple[CycleGANTaskConfig, TrainerConfig]:
-    cfg = load_config(args.config)
+    default_cyclegan_path = (
+        Path(__file__).resolve().parent.parent / "config" / "cyclegan.yaml"
+    )
+    cfg = load_config(args.config, default_path=default_cyclegan_path)
 
     data_cfg = cfg.get("data", {})
     if args.train_a_dir:
@@ -411,12 +414,18 @@ def build_cyclegan_task_config(
     model_cfg = CycleGANModelConfig(**cfg.get("model", {}))
     optimizer_cfg = CycleGANOptimizerConfig(**cfg.get("optimizer", {}))
     loss_cfg = CycleGANLossConfig(**cfg.get("loss", {}))
+    eval_cfg = cfg.get("evaluation", {})
     data = CycleGANDataConfig(
         domain_a_dir=data_cfg["domain_a_dir"],
         domain_b_dir=data_cfg["domain_b_dir"],
         batch_size=data_cfg.get("batch_size", 1),
         num_workers=data_cfg.get("num_workers", 4),
         normalize_tanh=bool(data_cfg.get("normalize_tanh", True)),
+        eval_enabled=bool(eval_cfg.get("enabled", False)),
+        eval_domain_a_dir=eval_cfg.get("domain_a_dir"),
+        eval_domain_b_dir=eval_cfg.get("domain_b_dir"),
+        eval_batch_size=eval_cfg.get("batch_size"),
+        eval_num_workers=eval_cfg.get("num_workers"),
     )
 
     train_cfg = cfg.get("training", {})
