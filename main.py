@@ -15,7 +15,7 @@ def parse_args() -> argparse.Namespace:
     subparsers.add_parser("train", help="Run training")
 
     infer_p = subparsers.add_parser("infer", help="Run inference")
-    infer_p.add_argument("--config", default="config/default.yaml")
+    infer_p.add_argument("--config", default="config/gan.yaml")
     infer_p.add_argument("--input_dir", help="Override input directory for inference")
     infer_p.add_argument("--checkpoint", help="Override checkpoint path")
     infer_p.add_argument("--output_dir", help="Override output directory for inference")

@@ -1,4 +1,5 @@
 from .align import SoftShiftAligner
+from .cyclegan import CycleGANDiscriminator, CycleGANGenerator, CycleGANModelConfig
 from .degradation import LearnablePSFDownsampler
 from .feature import TinySwinPhi
 from .generator import RCANSRGenerator
@@ -10,6 +11,9 @@ __all__ = [
     "LearnablePSFDownsampler",
     "TinySwinPhi",
     "RCANSRGenerator",
+    "CycleGANDiscriminator",
+    "CycleGANGenerator",
+    "CycleGANModelConfig",
     "LossWeights",
     "SemiSRLoss",
     "SemiSRConfig",

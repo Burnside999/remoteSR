@@ -11,7 +11,7 @@ except ImportError:
     yaml = None
 
 
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "default.yaml"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "gan.yaml"
 
 
 def _deep_merge(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]:

@@ -15,6 +15,12 @@ from remoteSR.tasks import (
     BYOLDataConfig,
     BYOLOptimConfig,
     BYOLTaskConfig,
+    CycleGANDataConfig,
+    CycleGANLossConfig,
+    CycleGANModelConfig,
+    CycleGANOptimizerConfig,
+    CycleGANTask,
+    CycleGANTaskConfig,
     DINODataConfig,
     DINOOptimConfig,
     DINOTaskConfig,
@@ -45,11 +51,17 @@ class CLIArgs:
     seed: int | None
     train_lr_dir: str | None
     train_hr_dir: str | None
+    train_a_dir: str | None
+    train_b_dir: str | None
     phi_pretrained: str | None
     freeze_phi: bool
     phi_checkpoint: str | None
     g_checkpoint: str | None
     d_checkpoint: str | None
+    g_ab_checkpoint: str | None
+    g_ba_checkpoint: str | None
+    d_a_checkpoint: str | None
+    d_b_checkpoint: str | None
     freeze_phi_epochs: int | None
     freeze_g_epochs: int | None
     freeze_d_epochs: int | None
@@ -381,6 +393,68 @@ def build_pretrain_task_config(
     return task_cfg, trainer_cfg
 
 
+def build_cyclegan_task_config(
+    args: CLIArgs,
+) -> tuple[CycleGANTaskConfig, TrainerConfig]:
+    cfg = load_config(args.config)
+
+    data_cfg = cfg.get("data", {})
+    if args.train_a_dir:
+        data_cfg["domain_a_dir"] = args.train_a_dir
+    if args.train_b_dir:
+        data_cfg["domain_b_dir"] = args.train_b_dir
+    if args.batch_size is not None:
+        data_cfg["batch_size"] = args.batch_size
+    if args.num_workers is not None:
+        data_cfg["num_workers"] = args.num_workers
+
+    model_cfg = CycleGANModelConfig(**cfg.get("model", {}))
+    optimizer_cfg = CycleGANOptimizerConfig(**cfg.get("optimizer", {}))
+    loss_cfg = CycleGANLossConfig(**cfg.get("loss", {}))
+    data = CycleGANDataConfig(
+        domain_a_dir=data_cfg["domain_a_dir"],
+        domain_b_dir=data_cfg["domain_b_dir"],
+        batch_size=data_cfg.get("batch_size", 1),
+        num_workers=data_cfg.get("num_workers", 4),
+        normalize_tanh=bool(data_cfg.get("normalize_tanh", True)),
+    )
+
+    train_cfg = cfg.get("training", {})
+    checkpoints_cfg = train_cfg.get("checkpoints", {})
+    output_dir = Path(args.save_dir or train_cfg.get("output_dir", "checkpoints"))
+    log_file_opt = args.log_file or train_cfg.get("log_file")
+    if log_file_opt:
+        log_path = Path(log_file_opt)
+        log_file = log_path if log_path.is_absolute() else output_dir / log_path
+    else:
+        log_file = output_dir / f"log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+
+    task_cfg = CycleGANTaskConfig(
+        model=model_cfg,
+        data=data,
+        optimizer=optimizer_cfg,
+        loss=loss_cfg,
+        checkpoint_g_ab=args.g_ab_checkpoint or checkpoints_cfg.get("g_ab"),
+        checkpoint_g_ba=args.g_ba_checkpoint or checkpoints_cfg.get("g_ba"),
+        checkpoint_d_a=args.d_a_checkpoint or checkpoints_cfg.get("d_a"),
+        checkpoint_d_b=args.d_b_checkpoint or checkpoints_cfg.get("d_b"),
+    )
+
+    trainer_cfg = TrainerConfig(
+        epochs=args.epochs or train_cfg.get("epochs", 200),
+        amp=args.amp if args.amp is not None else bool(train_cfg.get("amp", False)),
+        grad_clip_norm=args.grad_clip_norm
+        if args.grad_clip_norm is not None
+        else train_cfg.get("grad_clip_norm", 1.0),
+        save_every=args.save_every or train_cfg.get("save_every", 1),
+        save_dir=output_dir,
+        log_file=log_file,
+        monitor="loss_g",
+        mode="min",
+    )
+    return task_cfg, trainer_cfg
+
+
 def parse_args() -> CLIArgs:
     parser = argparse.ArgumentParser(description="remoteSR training")
     parser.add_argument(
@@ -403,11 +477,17 @@ def parse_args() -> CLIArgs:
 
     parser.add_argument("--train_lr_dir")
     parser.add_argument("--train_hr_dir")
+    parser.add_argument("--train_a_dir")
+    parser.add_argument("--train_b_dir")
     parser.add_argument("--phi_pretrained")
     parser.add_argument("--freeze_phi", action="store_true")
     parser.add_argument("--phi_checkpoint")
     parser.add_argument("--g_checkpoint")
     parser.add_argument("--d_checkpoint")
+    parser.add_argument("--g_ab_checkpoint")
+    parser.add_argument("--g_ba_checkpoint")
+    parser.add_argument("--d_a_checkpoint")
+    parser.add_argument("--d_b_checkpoint")
     parser.add_argument("--freeze_phi_epochs", type=int)
     parser.add_argument("--freeze_g_epochs", type=int)
     parser.add_argument("--freeze_d_epochs", type=int)
@@ -460,6 +540,9 @@ def run_training(args: CLIArgs) -> None:
     elif args.task == "phi_byol":
         task_cfg, trainer_cfg = build_pretrain_task_config(args)
         task = PhiBYOLTask(task_cfg)
+    elif args.task == "cyclegan":
+        task_cfg, trainer_cfg = build_cyclegan_task_config(args)
+        task = CycleGANTask(task_cfg)
     else:
         task_cfg, trainer_cfg = build_pretrain_task_config(args)
         task = PhiDINOTask(task_cfg)
@@ -503,6 +586,35 @@ def run_training(args: CLIArgs) -> None:
             task_cfg.optimizer.lr_d,
             task_cfg.optimizer.lr_phi,
             task_cfg.optimizer.weight_decay,
+        )
+    elif args.task == "cyclegan":
+        logger.info(
+            "CycleGAN data: A_dir=%s B_dir=%s batch_size=%s num_workers=%s",
+            task_cfg.data.domain_a_dir,
+            task_cfg.data.domain_b_dir,
+            task_cfg.data.batch_size,
+            task_cfg.data.num_workers,
+        )
+        logger.info(
+            "CycleGAN checkpoints: G_AB=%s G_BA=%s D_A=%s D_B=%s",
+            task_cfg.checkpoint_g_ab,
+            task_cfg.checkpoint_g_ba,
+            task_cfg.checkpoint_d_a,
+            task_cfg.checkpoint_d_b,
+        )
+        logger.info(
+            "Optim LR: G=%.6f D=%.6f betas=(%.2f, %.3f) weight_decay=%.6f",
+            task_cfg.optimizer.lr_g,
+            task_cfg.optimizer.lr_d,
+            task_cfg.optimizer.beta1,
+            task_cfg.optimizer.beta2,
+            task_cfg.optimizer.weight_decay,
+        )
+        logger.info(
+            "Loss weights: lambda_cycle=%.2f lambda_id=%.2f use_identity=%s",
+            task_cfg.loss.lambda_cycle,
+            task_cfg.loss.lambda_id,
+            task_cfg.loss.use_identity,
         )
     else:
         data_cfg = task_cfg.data

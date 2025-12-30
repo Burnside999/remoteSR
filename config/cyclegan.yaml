@@ -1,0 +1,61 @@
+model:
+  # Input/output channel count.
+  in_channels: 3
+  # Base feature width for generators/discriminators.
+  base_channels: 64
+  # Number of ResNet blocks in the generator bottleneck.
+  num_res_blocks: 6
+  # Enable dropout in ResNet blocks.
+  use_dropout: false
+
+data:
+  # Domain A training directory.
+  domain_a_dir: dataset/domainA
+  # Domain B training directory.
+  domain_b_dir: dataset/domainB
+  # Batch size for CycleGAN training.
+  batch_size: 1
+  # DataLoader worker count.
+  num_workers: 4
+  # Normalize images to [-1, 1] for tanh outputs.
+  normalize_tanh: true
+
+optimizer:
+  # Generator learning rate.
+  lr_g: 0.0002
+  # Discriminator learning rate.
+  lr_d: 0.0002
+  # Adam beta1.
+  beta1: 0.5
+  # Adam beta2.
+  beta2: 0.999
+  # Weight decay.
+  weight_decay: 0.0
+
+loss:
+  # Cycle consistency weight.
+  lambda_cycle: 10.0
+  # Identity loss weight.
+  lambda_id: 0.5
+  # Enable identity loss term.
+  use_identity: true
+
+training:
+  # Total CycleGAN training epochs.
+  epochs: 200
+  # Enable automatic mixed precision.
+  amp: false
+  # Gradient clipping max norm.
+  grad_clip_norm: 1.0
+  # Save checkpoint every N epochs.
+  save_every: 10
+  # Output directory for CycleGAN checkpoints.
+  output_dir: checkpoints
+  # Log file path (default: output_dir/log_{timestamp}.txt when null).
+  log_file: null
+  checkpoints:
+    # Optional warm-start checkpoints for individual components.
+    g_ab: null
+    g_ba: null
+    d_a: null
+    d_b: null
