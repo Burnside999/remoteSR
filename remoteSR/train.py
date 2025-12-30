@@ -468,7 +468,7 @@ def parse_args() -> CLIArgs:
     parser = argparse.ArgumentParser(description="remoteSR training")
     parser.add_argument(
         "--task",
-        choices=["sr_gan", "phi_byol", "phi_dino"],
+        choices=["sr_gan", "phi_byol", "phi_dino", "cyclegan"],
         default="sr_gan",
         help="Training task",
     )
