@@ -81,6 +81,8 @@ training:
   output_dir: checkpoints
   # Log file path (default: output_dir/log_{timestamp}.txt when null).
   log_file: null
+  # Directory to dump validation sample images (default: output_dir/val_samples).
+  val_sample_dir: null
   checkpoints:
     # Optional warm-start checkpoints for individual components.
     phi: null

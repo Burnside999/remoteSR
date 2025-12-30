@@ -6,12 +6,14 @@ from pathlib import Path
 from typing import Any
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 from torch.utils.data import DataLoader
 
 from remoteSR.data import EvalLRDataset, SRDataset
 from remoteSR.models import LossWeights, SemiSRConfig, SemiSRLoss, SemiSupervisedSRModel
 from remoteSR.tasks.base import Task
+from remoteSR.utils import save_tensor_as_png
 
 
 @dataclass
@@ -64,6 +66,7 @@ class SRTaskConfig:
     freeze_phi_epochs: int = 0
     freeze_g_epochs: int = 0
     freeze_d_epochs: int = 0
+    val_sample_dir: str | None = None
 
 
 class SRGanTask(Task):
@@ -74,6 +77,11 @@ class SRGanTask(Task):
         self.criterion: SemiSRLoss | None = None
         self.frozen: dict[str, bool] = {"phi": False, "g": False, "d": False}
         self.logger = logging.getLogger("remoteSR")
+        self.current_epoch: int = 0
+        self.val_saved: int = 0
+        self.val_sample_dir = (
+            Path(config.val_sample_dir) if config.val_sample_dir else None
+        )
 
     def build_models(self, device: torch.device) -> dict[str, nn.Module]:
         model = SemiSupervisedSRModel(self.config.model).to(device)
@@ -250,6 +258,7 @@ class SRGanTask(Task):
         y_lr = batch["y_lr"]
         x_hat, y_recon = model(y_lr, return_lr_recon=True)
         l1 = torch.nn.functional.l1_loss(y_recon, y_lr)
+        self._maybe_save_val_samples(y_lr, x_hat, batch)
         return {"val_lr_l1": float(l1.item())}
 
     def config_dict(self) -> dict[str, Any]:
@@ -265,6 +274,7 @@ class SRGanTask(Task):
             "freeze_phi_epochs": self.config.freeze_phi_epochs,
             "freeze_g_epochs": self.config.freeze_g_epochs,
             "freeze_d_epochs": self.config.freeze_d_epochs,
+            "val_sample_dir": self.config.val_sample_dir,
         }
 
     def on_epoch_start(
@@ -275,6 +285,8 @@ class SRGanTask(Task):
     ) -> None:
         _ = optimizers  # optimizer behavior is gated by requires_grad
         model = models["sr_model"]
+        self.current_epoch = epoch
+        self.val_saved = 0
 
         self.frozen["g"] = self._should_freeze(self.config.freeze_g_epochs, epoch)
         self.frozen["d"] = self._should_freeze(self.config.freeze_d_epochs, epoch)
@@ -393,6 +405,57 @@ class SRGanTask(Task):
         except Exception as exc:  # pragma: no cover - defensive
             self.logger.error("Failed to load %s from %s: %s", name, ckpt_path, exc)
             return False
+
+    def _maybe_save_val_samples(
+        self,
+        y_lr: torch.Tensor,
+        x_hat: torch.Tensor,
+        batch: dict[str, Any],
+    ) -> None:
+        if self.val_sample_dir is None:
+            return
+        if self.val_saved >= 4:
+            return
+
+        self.val_sample_dir.mkdir(parents=True, exist_ok=True)
+
+        remaining = 4 - self.val_saved
+        b = y_lr.shape[0]
+        take = min(remaining, b)
+        idxs = torch.randperm(b, device=y_lr.device)[:take]
+
+        hr_ref = batch.get("x_ls_hr")
+        scale = getattr(self.config.model, "scale", 4)
+
+        for idx in idxs:
+            idx_int = int(idx)
+            sr_img = x_hat[idx_int].detach().cpu()
+            save_tensor_as_png(
+                sr_img,
+                self.val_sample_dir
+                / f"epoch{self.current_epoch:04d}_sample{self.val_saved}_sr.png",
+            )
+
+            if hr_ref is not None:
+                save_tensor_as_png(
+                    hr_ref[idx_int].detach().cpu(),
+                    self.val_sample_dir
+                    / f"epoch{self.current_epoch:04d}_sample{self.val_saved}_hr.png",
+                )
+
+            lr_up = F.interpolate(
+                y_lr[idx_int].unsqueeze(0),
+                scale_factor=scale,
+                mode="bilinear",
+                align_corners=False,
+            )[0]
+            save_tensor_as_png(
+                lr_up.detach().cpu(),
+                self.val_sample_dir
+                / f"epoch{self.current_epoch:04d}_sample{self.val_saved}_lr_up.png",
+            )
+
+            self.val_saved += 1
 
     @staticmethod
     def _move_to_device(batch: dict[str, Any], device: torch.device) -> dict[str, Any]:

@@ -124,6 +124,8 @@ def build_sr_task_config(args: CLIArgs) -> tuple[SRTaskConfig, TrainerConfig]:
         log_file = log_path if log_path.is_absolute() else output_dir / log_path
     else:
         log_file = output_dir / f"log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+    sample_dir_cfg = train_cfg.get("val_sample_dir")
+    sample_dir = Path(sample_dir_cfg) if sample_dir_cfg else output_dir / "val_samples"
 
     freeze_phi_epochs = (
         args.freeze_phi_epochs
@@ -160,6 +162,7 @@ def build_sr_task_config(args: CLIArgs) -> tuple[SRTaskConfig, TrainerConfig]:
         freeze_phi_epochs=int(freeze_phi_epochs),
         freeze_g_epochs=int(freeze_g_epochs),
         freeze_d_epochs=int(freeze_d_epochs),
+        val_sample_dir=str(sample_dir),
     )
 
     trainer_cfg = TrainerConfig(
